@@ -54,6 +54,17 @@ build\injection\Vape421Native.dll
 build\injection\README.md
 ```
 
+## Tải bản phát hành
+
+Khi tải từ [GitHub Releases](https://github.com/tiendung-c/vape-source/releases), bắt buộc tải đủ hai asset:
+
+```text
+Vape421Injector.exe
+Vape421Native.dll
+```
+
+Đặt EXE và DLL cạnh nhau trong cùng một thư mục rồi chạy `Vape421Injector.exe`. Chỉ có một trong hai file sẽ không đủ để inject.
+
 ## Kiểm thử
 
 ```powershell
@@ -75,4 +86,3 @@ Minecraft world detected; injection is ready
 `BOOT INIT_ACCOUNT_OFFLINE` xác nhận phần account không gọi dịch vụ đăng nhập online. Profile/settings được Java lưu ở `%APPDATA%\Vape` dưới dạng JSON, không do native layer quản lý.
 
 Nếu không thể ghi đè file trong `build\injection`, hãy đóng `Vape421Injector.exe` và Minecraft đang giữ DLL rồi chạy lại task build.
-

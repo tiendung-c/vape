@@ -240,6 +240,17 @@ build\injection\README.md
 
 `prepareInjectionBundle` là task phát hành canonical. Không cần copy thủ công sang `build\injection-config` hoặc tạo thêm folder staging.
 
+### Tải bản phát hành
+
+Binary không nằm trong Git vì thư mục `build/` bị loại khỏi source commit. Khi tải bản phát hành từ [GitHub Releases](https://github.com/tiendung-c/vape-source/releases), bắt buộc tải đủ cả hai file sau:
+
+```text
+Vape421Injector.exe
+Vape421Native.dll
+```
+
+Đặt hai file trong cùng một thư mục rồi chạy `Vape421Injector.exe`. Không chỉ tải riêng EXE hoặc DLL; injector cần DLL cùng thư mục để nạp vào JVM Minecraft.
+
 ## 12. Kiểm thử native
 
 Sau khi build:
@@ -262,4 +273,3 @@ Các test kiểm tra payload resource, kích thước/kiến trúc DLL và các 
 ## 14. Tóm tắt một câu
 
 Gradle tạo payload Java tương thích Java 8, ShadowJar gom dependency, CMake/MSVC nhúng JAR vào DLL x64, injector nạp DLL vào `javaw.exe`, rồi DLL dùng JNI/JVMTI và ClassLoader của Minecraft để gọi `NativeBridge.start()`; toàn bộ profile và settings được lưu offline dưới dạng JSON.
-
