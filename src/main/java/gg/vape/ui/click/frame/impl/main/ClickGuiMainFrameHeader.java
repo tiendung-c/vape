@@ -1,6 +1,7 @@
 package gg.vape.ui.click.frame.impl.main;
 
 import gg.vape.Vape;
+import gg.vape.account.OfflineAccountManager;
 import gg.vape.module.none.ClientSettings;
 import gg.vape.ui.click.component.GlyphIconComponent;
 import gg.vape.ui.click.component.GuiComponent;
@@ -16,6 +17,7 @@ import gg.vape.ui.click.frame.impl.main.ClickGuiOverlaySpec;
 import gg.vape.ui.click.frame.impl.main.ClickGuiOverlayTransitionMode;
 import gg.vape.ui.click.frame.impl.main.ClickGuiSectionTabComponent;
 import gg.vape.ui.click.frame.impl.main.ClickGuiSidecarPanelBase;
+import gg.vape.wrapper.impl.ForgeVersion;
 import gg.vape.utils.render.GuiRenderPrimitives;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -30,6 +32,7 @@ extends FrameHeaderComponent {
     private static final double ACTION_ICON_SPACING = 15.0;
     private final GlyphIconComponent syncIcon;
     private final ClickGuiMainFrameHeaderActionComponent refreshAction = new ClickGuiMainFrameHeaderActionComponent();
+    private final GlyphIconComponent accountIcon;
     private final GlyphIconComponent settingsIcon;
     private final List<ClickGuiSectionTabComponent> sectionTabs;
     private final List<GlyphIconComponent> actionIcons;
@@ -58,6 +61,14 @@ extends FrameHeaderComponent {
         Vape.INSTANCE.getPublicProfileSettings().guiStyle.setValue(Vape.INSTANCE.getPublicProfileSettings().framesGuiStyle);
         Vape.INSTANCE.getPublicProfileSettings().guiStyle.setValue(Vape.INSTANCE.getPublicProfileSettings().centralGuiStyle);
         Vape.INSTANCE.getNotificationManager().showInfo("Refreshed", "StandaloneGUI refreshed", 1000L);
+    }
+
+    private static void switchOfflineAccount() {
+        if (!ForgeVersion.MC_1_8_9.L()) return;
+        OfflineAccountManager manager = Vape.INSTANCE.getOfflineAccountManager();
+        if (manager != null) {
+            manager.cycleAndApply();
+        }
     }
 
     public void addSectionTab(ClickGuiSectionTabComponent clickGuiSectionTabComponent) {
@@ -161,6 +172,7 @@ extends FrameHeaderComponent {
         this.syncIcon = new GlyphIconComponent("newsync", 6.0, 6.0, 10.0, 10.0, ClickGuiMainFrameHeader.J.V, ClickGuiMainFrameHeader.J.f, null);
         this.overlaysIcon = new GlyphIconComponent("newoverlays_2x", 6.0, 6.0, 10.0, 10.0, ClickGuiMainFrameHeader.J.V, ClickGuiMainFrameHeader.J.f, null);
         this.settingsIcon = new GlyphIconComponent("newsettings", 6.0, 6.0, 10.0, 10.0, ClickGuiMainFrameHeader.J.V, ClickGuiMainFrameHeader.J.f, null);
+        this.accountIcon = new GlyphIconComponent("newprofiles", 6.0, 6.0, 10.0, 10.0, ClickGuiMainFrameHeader.J.V, ClickGuiMainFrameHeader.J.f, null);
         this.sectionTabs = new ArrayList<ClickGuiSectionTabComponent>();
         this.actionIcons = new ArrayList<GlyphIconComponent>();
         this.Y(HEADER_HEIGHT);
@@ -182,8 +194,15 @@ extends FrameHeaderComponent {
         this.settingsIcon.setBackgroundAnimationColors(ClickGuiMainFrameHeader.J.t, ClickGuiMainFrameHeader.J.M);
         this.settingsIcon.setCornerRadius(5.0f);
         this.settingsIcon.setClickListener(() -> ClickGuiMainFrameHeader.lambda$new$8(clickGuiMainFrame));
-        this.actionIcons.addAll(Arrays.asList(this.syncIcon, this.overlaysIcon, this.settingsIcon));
-        this.addChildren(this.refreshAction, this.syncIcon, this.overlaysIcon, this.settingsIcon);
+        this.accountIcon.setCenterHorizontally(true);
+        this.accountIcon.setCenterVertically(true);
+        this.accountIcon.setBackgroundAnimationColors(ClickGuiMainFrameHeader.J.t, ClickGuiMainFrameHeader.J.M);
+        this.accountIcon.setCornerRadius(5.0f);
+        this.accountIcon.w("Change offline account");
+        this.accountIcon.setVisible(ForgeVersion.MC_1_8_9.L());
+        this.accountIcon.setClickListener(ClickGuiMainFrameHeader::switchOfflineAccount);
+        this.actionIcons.addAll(Arrays.asList(this.syncIcon, this.overlaysIcon, this.settingsIcon, this.accountIcon));
+        this.addChildren(this.refreshAction, this.syncIcon, this.overlaysIcon, this.settingsIcon, this.accountIcon);
     }
 
     private static void lambda$new$2() {

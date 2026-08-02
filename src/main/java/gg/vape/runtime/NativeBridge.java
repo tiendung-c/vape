@@ -257,7 +257,7 @@ public class NativeBridge {
     //GetClass
     public static Class<?> gc(String internalName) {
         try {
-            return Class.forName(internalName.replace("/", "."));
+            return loadRuntimeClass(internalName.replace("/", "."));
         }
         catch (Throwable throwable) {
             return null;
@@ -349,8 +349,10 @@ public class NativeBridge {
 
     public static void start() throws Throwable {
         NativeBridge.enterBootstrapStage("DETECT_RUNTIME");
-        forgeAbsent = !isClassPresent("net.minecraftforge.common.ForgeVersion")
-                && !isClassPresent("net.minecraftforge.fml.loading.FMLLoader");
+        forgeAbsent = !isAnyClassPresent(
+                "net.minecraftforge.versions.forge.ForgeVersion",
+                "net.minecraftforge.common.ForgeVersion",
+                "net.minecraftforge.fml.loading.FMLLoader");
         Vape vape = new Vape();
         NativeBridge.enterBootstrapStage("LOAD_MAPPINGS");
         NativeBridge.invokeVoidInitOrThrow(vape, "loadMappings");
@@ -479,6 +481,23 @@ public class NativeBridge {
     public static int gmv() {
         Throwable lastFailure = null;
 
+        // Forge 1.21.x moved ForgeVersion from net.minecraftforge.common to
+        // net.minecraftforge.versions.forge and exposes the version through
+        // the public getVersion() method.
+        try {
+            Object forgeVersion = invokeStaticMethod(
+                    "net.minecraftforge.versions.forge.ForgeVersion", "getVersion");
+            int parsedVersion = parseForgeVersion(forgeVersion);
+            if (parsedVersion >= 0) {
+                return parsedVersion;
+            }
+            lastFailure = new IllegalStateException(
+                    "ForgeVersion.getVersion() is not supported: " + forgeVersion);
+        }
+        catch (Throwable throwable) {
+            lastFailure = throwable;
+        }
+
         try {
             Object minorVersion = readStaticField(
                     "net.minecraftforge.common.ForgeVersion", "minorVersion");
@@ -513,6 +532,20 @@ public class NativeBridge {
                 return parsedVersion;
             }
             lastFailure = new IllegalStateException("ForgeVersion.forgeVersion is not supported: " + forgeVersion);
+        }
+        catch (Throwable throwable) {
+            lastFailure = throwable;
+        }
+
+        try {
+            Object forgeVersion = readStaticField(
+                    "net.minecraftforge.versions.forge.ForgeVersion", "forgeVersion");
+            int parsedVersion = parseForgeVersion(forgeVersion);
+            if (parsedVersion >= 0) {
+                return parsedVersion;
+            }
+            lastFailure = new IllegalStateException(
+                    "ForgeVersion.forgeVersion is not supported: " + forgeVersion);
         }
         catch (Throwable throwable) {
             lastFailure = throwable;
@@ -618,7 +651,7 @@ public class NativeBridge {
 
     private static boolean isClassPresent(String className) {
         try {
-            Class.forName(className, false, NativeBridge.class.getClassLoader());
+            loadRuntimeClass(className);
             return true;
         }
         catch (ClassNotFoundException ignored) {
@@ -626,8 +659,74 @@ public class NativeBridge {
         }
     }
 
+    private static boolean isAnyClassPresent(String... classNames) {
+        for (String className : classNames) {
+            if (isClassPresent(className)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Class<?> loadRuntimeClass(String className) throws ClassNotFoundException {
+        ClassNotFoundException lastFailure = null;
+        ClassLoader[] candidateLoaders = new ClassLoader[]{
+                Thread.currentThread().getContextClassLoader(),
+                NativeBridge.class.getClassLoader(),
+                Vape.class.getClassLoader(),
+                ClassLoader.getSystemClassLoader()
+        };
+        for (ClassLoader loader : candidateLoaders) {
+            if (loader == null) {
+                continue;
+            }
+            try {
+                return Class.forName(className, false, loader);
+            }
+            catch (ClassNotFoundException failure) {
+                lastFailure = failure;
+            }
+        }
+
+        // Forge 1.21.x may expose its automatic modules through a module layer
+        // that is not the same loader as Minecraft's game loader. Use reflection
+        // here so the payload remains Java 8 bytecode compatible.
+        String[] moduleNames = new String[]{
+                "net.minecraftforge.forge",
+                "net.minecraftforge.fmlloader",
+                "net.minecraftforge.modlauncher"
+        };
+        try {
+            Class<?> moduleLayerClass = Class.forName(
+                    "java.lang.ModuleLayer", false, ClassLoader.getSystemClassLoader());
+            Method bootMethod = moduleLayerClass.getMethod("boot");
+            Method findLoaderMethod = moduleLayerClass.getMethod("findLoader", String.class);
+            Object bootLayer = bootMethod.invoke(null);
+            for (String moduleName : moduleNames) {
+                try {
+                    ClassLoader loader = (ClassLoader)findLoaderMethod.invoke(bootLayer, moduleName);
+                    if (loader == null) {
+                        continue;
+                    }
+                    return Class.forName(className, false, loader);
+                }
+                catch (Throwable ignored) {
+                    // The module may live in a custom Forge layer instead.
+                }
+            }
+        }
+        catch (Throwable ignored) {
+            // Java 8 has no ModuleLayer; the normal loaders above are enough.
+        }
+
+        if (lastFailure != null) {
+            throw lastFailure;
+        }
+        throw new ClassNotFoundException(className);
+    }
+
     private static Object readStaticField(String className, String fieldName) throws Exception {
-        Class<?> owner = Class.forName(className);
+        Class<?> owner = loadRuntimeClass(className);
         Field field;
         try {
             field = owner.getField(fieldName);
@@ -637,6 +736,13 @@ public class NativeBridge {
         }
         field.setAccessible(true);
         return field.get(null);
+    }
+
+    private static Object invokeStaticMethod(String className, String methodName) throws Exception {
+        Class<?> owner = loadRuntimeClass(className);
+        Method method = owner.getMethod(methodName);
+        method.setAccessible(true);
+        return method.invoke(null);
     }
 
     private static int parseForgeVersion(Object value) {
@@ -706,9 +812,23 @@ public class NativeBridge {
     //GetVanillaClas
     public static Class<?> gvc(String internalName) {
         try {
-            return Class.forName(internalName.replace("/", "."));
+            return loadRuntimeClass(internalName.replace("/", "."));
         }
         catch (Throwable throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Resolves a Minecraft/Forge class through the loader selected by the
+     * native bootstrap. MappedClasses cannot use its own payload classloader
+     * for transformed game classes on Forge 1.21.x.
+     */
+    public static Class<?> loadRuntimeClassForMappings(String className) {
+        try {
+            return loadRuntimeClass(className);
+        }
+        catch (Throwable ignored) {
             return null;
         }
     }

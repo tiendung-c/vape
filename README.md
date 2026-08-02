@@ -6,6 +6,30 @@
 
 Bản này không dùng HTTP API, Microsoft/Xbox/Minecraft authentication hoặc Zeus protocol. Profile, settings và auto-save đều hoạt động trên máy cục bộ. Injector dùng cơ chế Win32/JNI/JVMTI thông thường để nạp DLL; tài liệu này không mô tả hay triển khai cơ chế né anti-cheat, stealth injection hoặc bypass bảo vệ của game.
 
+### Account crack/offline cho Minecraft 1.8.9
+
+Bản 1.8.9 có account switcher cục bộ, không đăng nhập Microsoft/Xbox và không gửi thông tin tài khoản ra mạng.
+
+- Danh sách account được lưu tại `%APPDATA%\Vape\accounts.json`.
+- Mỗi account chỉ cần tên Minecraft hợp lệ: 1–16 ký tự, gồm chữ, số và `_`.
+- Bấm icon account trên thanh menu phía trên của Click GUI để chuyển sang account kế tiếp.
+- UUID được tạo theo chuẩn `OfflinePlayer:<tên>`, giống cơ chế offline của Minecraft.
+- Sau khi đổi tên, cần thoát vào lại world/server để player profile hiện tại được tạo lại.
+
+Ví dụ `accounts.json`:
+
+```json
+{
+  "active": "Player_Two",
+  "accounts": [
+    { "name": "Player_One" },
+    { "name": "Player_Two" }
+  ]
+}
+```
+
+Chức năng này chỉ đổi session cục bộ của Minecraft 1.8.9. Nó không biến server online-mode thành offline và không thể thay thế xác thực tài khoản thật.
+
 ## 2. Kiến trúc tổng thể
 
 ```text

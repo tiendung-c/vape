@@ -1420,14 +1420,11 @@ public class MappedClasses {
             bl2 = false;
         }
         if (!Vape.INSTANCE.isForgeRemapActive()) {
-            try {
-                Class<?> clazz = Class.forName(string.replace("/", "."), true, MappedClasses.class.getClassLoader());
-                return clazz;
-            }
-            catch (ClassNotFoundException classNotFoundException) {
+            Class<?> clazz = NativeBridge.loadRuntimeClassForMappings(string.replace("/", "."));
+            if (clazz == null) {
                 Vape.debugLog("Failed get class " + string);
-                return null;
             }
+            return clazz;
         }
         if (bl2) {
             Class clazz;

@@ -30,8 +30,15 @@ public class OpenGlDeviceInfo {
             versionName = version != null ? version : "Unknown Version";
             gpuVendor = OpenGlDeviceInfo.detectGpuVendor(vendor);
         }
-        catch (Exception exception) {
-            Vape.debugLog("Error getting OpenGL: " + exception.getMessage());
+        catch (Throwable error) {
+            // A modern Minecraft runtime supplies LWJGL3. If an older
+            // optional OpenGL probe is unavailable, keep render initialization
+            // alive with neutral device information.
+            vendorName = "Unknown Vendor";
+            rendererName = "Unknown GPU";
+            versionName = "Unknown Version";
+            gpuVendor = GpuVendor.UNKNOWN;
+            Vape.debugLog("OpenGL device probe unavailable: " + error.getClass().getSimpleName());
         }
     }
 

@@ -5,7 +5,11 @@ import java.util.stream.Stream;
 public class EnchantmentRegistryLookup
 extends ResourceKeyRegistryLookup {
     public Stream<EnchantmentHolder> listElements() {
-        return EnchantmentRegistryLookup.vapeInstance.getMappingsMapperCompat().R2.listElements(this.getObject()).map(EnchantmentHolder::new);
+        if (EnchantmentRegistryLookup.vapeInstance.getMappingsMapperCompat().R2 == null) {
+            return Stream.empty();
+        }
+        Stream<Object> elements = EnchantmentRegistryLookup.vapeInstance.getMappingsMapperCompat().R2.listElements(this.getObject());
+        return elements == null ? Stream.empty() : elements.map(EnchantmentHolder::new);
     }
 
     public EnchantmentRegistryLookup(Object wrappedObject) {

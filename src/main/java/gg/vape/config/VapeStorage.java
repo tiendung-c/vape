@@ -40,6 +40,11 @@ public final class VapeStorage {
         return root().resolve("settings.json");
     }
 
+    /** Local list of Minecraft 1.8.9 offline/cracked accounts. */
+    public static Path offlineAccountsFile() {
+        return root().resolve("accounts.json");
+    }
+
     public static Path profileFile(Profile profile) {
         return root().resolve(profileFileName(profile != null ? profile.getName() : null));
     }

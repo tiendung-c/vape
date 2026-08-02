@@ -381,6 +381,11 @@ static int add_jar_to_loader(
     jclass runtime_loader_class;
     jfieldID delegated_loader_field;
     jobject delegated_loader;
+    jfieldID fallback_loader_field;
+    jobject fallback_loader;
+    jclass class_loader_class;
+    jmethodID get_parent;
+    jobject parent_loader;
 
     url_loader_class = (*env)->FindClass(env, "java/net/URLClassLoader");
     url_class = (*env)->FindClass(env, "java/net/URL");
@@ -452,6 +457,88 @@ static int add_jar_to_loader(
         }
     } else if ((*env)->ExceptionCheck(env)) {
         (*env)->ExceptionClear(env);
+    }
+
+    /*
+     * Forge 1.21.x uses SecureModuleClassLoader. Its transformed game
+     * classes are loaded by the original loader, so replacing it with a
+     * child URLClassLoader makes injected event references invisible to
+     * GameRenderer and other transformed classes. SecureModuleClassLoader
+     * exposes a fallbackClassLoader specifically for classes outside its
+     * module graph; attach the product JAR there and keep the original
+     * loader as the owner of Minecraft classes.
+     */
+    fallback_loader_field = runtime_loader_class == NULL ? NULL
+            : (*env)->GetFieldID(env, runtime_loader_class,
+                    "fallbackClassLoader", "Ljava/lang/ClassLoader;");
+    if (fallback_loader_field == NULL && (*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+    }
+    if (fallback_loader_field != NULL) {
+        fallback_loader = (*env)->GetObjectField(
+                env, *loader, fallback_loader_field);
+        if ((*env)->ExceptionCheck(env)) {
+            (*env)->ExceptionClear(env);
+            fallback_loader = NULL;
+        }
+        if (fallback_loader != NULL
+                && (*env)->IsInstanceOf(env, fallback_loader,
+                        url_loader_class)) {
+            add_url = (*env)->GetMethodID(env, url_loader_class,
+                    "addURL", "(Ljava/net/URL;)V");
+            if (add_url == NULL) {
+                vape_log_pending_exception(env,
+                        L"resolve SecureModuleClassLoader fallback addURL");
+                return 0;
+            }
+            (*env)->CallVoidMethod(env, fallback_loader, add_url, url);
+            if ((*env)->ExceptionCheck(env)) {
+                vape_log_pending_exception(env,
+                        L"append product JAR to SecureModuleClassLoader fallback");
+                return 0;
+            }
+            vape_log(L"appended product JAR to SecureModuleClassLoader fallback");
+            return 1;
+        }
+
+        class_loader_class = (*env)->FindClass(env, "java/lang/ClassLoader");
+        get_parent = class_loader_class == NULL ? NULL : (*env)->GetMethodID(
+                env, class_loader_class, "getParent",
+                "()Ljava/lang/ClassLoader;");
+        parent_loader = NULL;
+        if (fallback_loader != NULL) {
+            parent_loader = fallback_loader;
+        } else if (get_parent != NULL) {
+            parent_loader = (*env)->CallObjectMethod(env, *loader, get_parent);
+            if ((*env)->ExceptionCheck(env)) {
+                (*env)->ExceptionClear(env);
+                parent_loader = NULL;
+            }
+        }
+        child_loader = NULL;
+        if (get_parent != NULL) {
+            url_loader_init = (*env)->GetMethodID(env, url_loader_class,
+                    "<init>", "([Ljava/net/URL;Ljava/lang/ClassLoader;)V");
+            urls = (*env)->NewObjectArray(env, 1, url_class, NULL);
+            if (url_loader_init != NULL && urls != NULL) {
+                (*env)->SetObjectArrayElement(env, urls, 0, url);
+                child_loader = (*env)->NewObject(env, url_loader_class,
+                        url_loader_init, urls, parent_loader);
+            }
+        }
+        if (child_loader == NULL || (*env)->ExceptionCheck(env)) {
+            vape_log_pending_exception(env,
+                    L"create SecureModuleClassLoader fallback URLClassLoader");
+            return 0;
+        }
+        (*env)->SetObjectField(env, *loader, fallback_loader_field, child_loader);
+        if ((*env)->ExceptionCheck(env)) {
+            vape_log_pending_exception(env,
+                    L"set SecureModuleClassLoader fallbackClassLoader");
+            return 0;
+        }
+        vape_log(L"attached product JAR through SecureModuleClassLoader fallback");
+        return 1;
     }
 
     url_loader_init = (*env)->GetMethodID(env, url_loader_class, "<init>",

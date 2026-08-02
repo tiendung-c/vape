@@ -117,6 +117,8 @@ idea {
     }
 }
 
+def excludeLegacyLwjgl = (project.findProperty('excludeLegacyLwjgl') ?: 'false').toString().toBoolean()
+
 tasks.register('injectionJar', com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar) {
     group = 'injection'
     description = 'Builds the self-contained Java payload embedded in the native DLL.'
@@ -125,6 +127,13 @@ tasks.register('injectionJar', com.github.jengelman.gradle.plugins.shadow.tasks.
     dependsOn(tasks.named('classes'))
     from(sourceSets.main.output)
     configurations = [project.configurations.runtimeClasspath]
+    inputs.property('excludeLegacyLwjgl', excludeLegacyLwjgl)
+    if (excludeLegacyLwjgl) {
+        // Minecraft 1.17+ already provides LWJGL3. Bundling LWJGL2 here makes
+        // the child payload loader shadow the game's OpenGL classes and causes
+        // it to search for the incompatible lwjgl64.dll.
+        exclude 'org/lwjgl/**'
+    }
     // The original sample bundled its bytecode-manipulation library relocated
     // into its own obfuscated namespace and loaded it via native defineClass, so
     // it never crossed a classloader boundary. Our recovery uses stock javassist
@@ -157,9 +166,11 @@ tasks.register('verifyInjectionPayload') {
                 'com/google/gson/',
                 'com/google/common/',
                 'io/netty/',
-                'org/apache/commons/io/',
-                'org/lwjgl/'
+                'org/apache/commons/io/'
         ]
+        if (!excludeLegacyLwjgl) {
+            requiredPrefixes << 'org/lwjgl/'
+        }
         def prefixCounts = requiredPrefixes.collectEntries { [(it): 0] }
         def tooNew = []
         int classCount = 0

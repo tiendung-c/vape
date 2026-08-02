@@ -51,6 +51,16 @@ public class MappingMethod {
 
     public void initializeAccessor(Class<?> owner) {
         if ((Vape.INSTANCE.isMappingsRemapped() || Vape.INSTANCE.isForgeRemapInactive()) && !this.resolutionFailed) {
+            // Generated accessors are defined by the payload classloader. On
+            // Forge 1.21.x the owner class belongs to SecureModuleClassLoader,
+            // so a generated accessor cannot link references such as
+            // net.minecraft.client.Minecraft. Keep the reflected Method path
+            // for cross-classloader runtime classes.
+            ClassLoader ownerLoader = owner == null ? null : owner.getClassLoader();
+            ClassLoader accessorLoader = GeneratedAccessorFactory.class.getClassLoader();
+            if (ownerLoader != null && ownerLoader != accessorLoader) {
+                return;
+            }
             if (this.runtimeName.equals("<init>") || this.runtimeName.equals("<clinit>")) {
                 this.resolveConstructor(owner);
                 return;

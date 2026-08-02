@@ -3,6 +3,7 @@ package gg.vape;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import gg.vape.account.AccountInfo;
+import gg.vape.account.OfflineAccountManager;
 import gg.vape.asm.helper.DescUtils;
 import gg.vape.combat.AttackStrengthTracker;
 import gg.vape.config.ConfigJsonUtils;
@@ -111,6 +112,7 @@ public class Vape {
     private SearchManager searchManager;
     private EnemyManager enemyManager;
     private AccountInfo accountInfo;
+    private OfflineAccountManager offlineAccountManager;
     private MacroManager macroManager;
     private String cachedAllData;
     private ModManager modManager;
@@ -536,6 +538,11 @@ public class Vape {
         EventBus.getInstance().registerListener(new VapeShutdownEventListener(), new Predicate[0]);
         EventBus.getInstance().registerListener(NameTagsRenderStateTracker.INSTANCE, new Predicate[0]);
         EventBus.getInstance().registerListener(this.notificationManager, new Predicate[0]);
+        if (ForgeVersion.MC_1_8_9.L()) {
+            this.offlineAccountManager = new OfflineAccountManager();
+            this.offlineAccountManager.load();
+            this.offlineAccountManager.applyActive();
+        }
         EventBus.getInstance().registerListener(new AttackCooldownUtil(), new Predicate[0]);
         EventBus.getInstance().registerListener(this.modManager, new Predicate[0]);
         if (ForgeVersion.MC_1_8_9.L()) {
@@ -564,6 +571,10 @@ public class Vape {
 
     public ProfilesManager getProfilesManager() {
         return this.profilesManager;
+    }
+
+    public OfflineAccountManager getOfflineAccountManager() {
+        return this.offlineAccountManager;
     }
 
     public void initializeRender() {
