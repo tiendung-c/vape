@@ -206,12 +206,7 @@ implements Comparable<Profile> {
             gg.vape.module.none.ClientSettings.refreshModuleCategoryHeaders();
             gg.vape.module.none.ClientSettings.closeListDropdowns();
         }
-        if (framesReady && this.data.get("frames") != null && !this.data.get("frames").isJsonNull() && Vape.INSTANCE.getPublicProfileSettings().framePositionsPerProfile.getEffectiveValue().booleanValue()) {
-            array = this.data.get("frames").getAsJsonArray();
-            JsonArray frameGroups = new JsonArray();
-            frameGroups.add((JsonElement)array);
-            gg.vape.module.none.ClientSettings.INSTANCE.loadFrameStates(frameGroups);
-        }
+        this.applyFrameStates();
         if (this.data.get("original_uuid") != null && !this.data.get("original_uuid").isJsonNull()) {
             this.originalUuid = this.data.get("original_uuid").getAsString();
         }
@@ -296,6 +291,22 @@ implements Comparable<Profile> {
             return;
         }
         Vape.INSTANCE.getModManager().applyHudModuleStates(this.legitEnabledModuleStates);
+    }
+
+    /** Applies saved frame visibility and positions after the GUI frames exist. */
+    public void applyFrameStates() {
+        if (!gg.vape.module.none.ClientSettings.framesInitialized
+                || this.data == null
+                || this.data.get("frames") == null
+                || this.data.get("frames").isJsonNull()
+                || !Vape.INSTANCE.getPublicProfileSettings().framePositionsPerProfile.getEffectiveValue().booleanValue()) {
+            return;
+        }
+        JsonArray frameStates = this.data.get("frames").getAsJsonArray();
+        JsonArray frameGroups = new JsonArray();
+        frameGroups.add((JsonElement)frameStates);
+        gg.vape.module.none.ClientSettings.INSTANCE.loadFrameStates(frameGroups);
+        gg.vape.module.none.ClientSettings.refreshModuleCategoryHeaders();
     }
 
     private void parseData(JsonObject data) {

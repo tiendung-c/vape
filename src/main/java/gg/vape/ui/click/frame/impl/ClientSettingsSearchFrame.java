@@ -6,6 +6,7 @@ import gg.vape.mapping.MappedClasses;
 import gg.vape.module.Category;
 import gg.vape.module.Mod;
 import gg.vape.module.none.ClientSettings;
+import gg.vape.module.none.TextGuiSettingsFrame;
 import gg.vape.ui.click.GuiMouseEvent;
 import gg.vape.ui.click.component.ColorDividerComponent;
 import gg.vape.ui.click.component.GuiComponent;
@@ -173,6 +174,7 @@ extends ModuleCategoryFrame {
     private void o$src$V$1nv32hf() {
         if (this.II.isEmpty()) {
             this.g(new ColorDividerComponent(ClientSettingsSearchFrame.J.m));
+            this.g(new ModuleCategoryNavigationButtonComponent("Favorites", Category.FAVORITES.getIconKey()));
             this.g(new ModuleCategoryNavigationButtonComponent("Combat", Category.COMBAT.getIconKey()));
             this.g(new ModuleCategoryNavigationButtonComponent("Render", Category.RENDER.getIconKey()));
             this.g(new ModuleCategoryNavigationButtonComponent("Utility", Category.UTILITY.getIconKey()));
@@ -188,6 +190,7 @@ extends ModuleCategoryFrame {
             this.g(new ColorDividerComponent(ClientSettingsSearchFrame.J.m));
             this.g(new ProfilesFrameNavigationButtonComponent().addClickListener(new ClientSettingsSearchFrameClassOpenClickHandler(this, ProfilesSettingsFrame.class)));
             this.g(new FrameNavigationButtonComponent("Macros", null, FrameMacros.class).addClickListener(new ClientSettingsSearchFrameClassOpenClickHandler(this, FrameMacros.class)));
+            this.g(new FrameNavigationButtonComponent("Text GUI", "newtextgui", TextGuiSettingsFrame.class).addClickListener(new ClientSettingsSearchFrameClassOpenClickHandler(this, TextGuiSettingsFrame.class)));
             if (ForgeVersion.MC_1_8_9.L()) {
                 this.g(new FrameNavigationButtonComponent("Acoounts", "newprofiles", OfflineAccountsFrame.class).addClickListener(new ClientSettingsSearchFrameClassOpenClickHandler(this, OfflineAccountsFrame.class)));
             }
