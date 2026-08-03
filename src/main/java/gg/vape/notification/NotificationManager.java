@@ -147,6 +147,10 @@ implements EventListener {
     }
 
     public void enqueue(INotification notification, boolean force) {
+        if (Vape.INSTANCE.getFontManager() == null) {
+            Vape.debugLog("Notification deferred until FontManager is initialized");
+            return;
+        }
         if (!this.isAllowedByFriendSettings(notification)) {
             return;
         }

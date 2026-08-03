@@ -164,10 +164,11 @@ implements EventListener {
         GuiComponent[] legacyComponentsSnapshot = Category.getLegacyComponents();
         Mod[] coreModules = new Mod[61];
         coreModules[0] = new ClientSettings();
-        // Keep the implementation available for internal dependencies. These
-        // legacy modules are hidden only on the modern 1.21.11 runtime,
-        // including Fabric/Knot and Forge-compatible version environments.
-        coreModules[1] = ModManager.hiddenMenuModule(new LeftClicker());
+        // These legacy click/build modules are not part of the 1.21 module set.
+        // They remain available on 1.8.9 exactly as before.
+        if (!ForgeVersion.MC_1_21_0.d()) {
+            coreModules[1] = new LeftClicker();
+        }
         coreModules[2] = new RightClicker();
         coreModules[3] = new Velocity();
         coreModules[4] = new VelocityPacketReceiveMode();
@@ -185,7 +186,9 @@ implements EventListener {
         coreModules[16] = new HitBoxes();
         coreModules[17] = new SpawnerFinder();
         coreModules[18] = new StorageESP();
-        coreModules[19] = ModManager.hiddenMenuModule(new Scaffold());
+        if (!ForgeVersion.MC_1_21_0.d()) {
+            coreModules[19] = new Scaffold();
+        }
         coreModules[20] = new Fullbright();
         coreModules[21] = new WTap();
         coreModules[22] = new AutoArmor();
@@ -220,15 +223,21 @@ implements EventListener {
         coreModules[51] = new Animations();
         SilentAura silentAura = new SilentAura();
         coreModules[52] = silentAura;
-        coreModules[53] = new SilentAuraClicker(silentAura);
+        if (!ForgeVersion.MC_1_21_0.d()) {
+            coreModules[53] = new SilentAuraClicker(silentAura);
+        }
         coreModules[54] = new SilentAuraTargetingModule();
         coreModules[55] = new Clutch();
         coreModules[56] = new InventoryManager();
-        coreModules[57] = ModManager.hiddenMenuModule(new BlockHit());
+        if (!ForgeVersion.MC_1_21_0.d()) {
+            coreModules[57] = new BlockHit();
+        }
         coreModules[58] = new Timer();
-        coreModules[59] = new AutoClickerInputModule();
+        if (!ForgeVersion.MC_1_21_0.d()) {
+            coreModules[59] = new AutoClickerInputModule();
+        }
         coreModules[60] = new BedPlates();
-        this.registerModules(Stream.of(coreModules));
+        this.registerModules(Stream.of(coreModules).filter(module -> module != null));
         ModRegistrationBuilder.create().setModule(new Explosions()).addVersionConstraint(ForgeVersion.MC_1_16_5.b()).registerWith(this);
         Mod[] versionConstrainedModules = new Mod[2];
         versionConstrainedModules[0] = new Chams();
@@ -245,19 +254,12 @@ implements EventListener {
         this.registerModules(Stream.of(new BedPlates()), ModManager::addBedPlatesVersionConstraints);
         this.registerModules(Stream.of(new AntiBot()));
         this.registerModules(Stream.of(new Triggerbot(), new HitSwap(), new AutoAnchor(), new WindCharge(), new CrystalAura(), new AutoTotem()), ModManager::addMinecraft1214Constraint);
-        this.registerModules(Stream.of(new NoFall(), new NoSlowdown(), new Speed(), new BlockHit(), new Timer()), ModManager::addModernMinecraftConstraint);
+        this.registerModules(Stream.of(new NoFall(), new NoSlowdown(), new Speed(), new Timer()), ModManager::addModernMinecraftConstraint);
         this.registerTextGuiSettings();
         this.registerHudModules();
         if (preservedLegacyComponents == null) {
             GuiComponent.setLegacyComponentState(new GuiComponent[2]);
         }
-    }
-
-    private static <T extends Mod> T hiddenMenuModule(T module) {
-        if (NativeBridge.isMinecraft12111Runtime()) {
-            module.setDefaultVisibility(false);
-        }
-        return module;
     }
 
     public boolean getState(Class<? extends Mod> clazz) {

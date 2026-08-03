@@ -34,6 +34,10 @@ extends ModuleCategoryFrame {
     }
 
     public static void e() {
+        if (U2 == null) {
+            Vape.debugLog("VisibleModuleListFrame not initialized; deferring profile UI refresh");
+            return;
+        }
         U2.removeMarkedChildren();
         try {
             CopyOnWriteArrayList<Mod> copyOnWriteArrayList = new CopyOnWriteArrayList<Mod>(Vape.INSTANCE.getModuleProfileMetadataCodec().getSelectedModules());
@@ -53,6 +57,9 @@ extends ModuleCategoryFrame {
     }
 
     public static ModuleComponent A(Mod mod) {
+        if (U2 == null) {
+            return null;
+        }
         for (GuiComponent guiComponent : U2.f()) {
             if (!(guiComponent instanceof ModuleComponent) || !((ModuleComponent)guiComponent).getModule().equals(mod)) continue;
             return (ModuleComponent)guiComponent;
@@ -60,4 +67,3 @@ extends ModuleCategoryFrame {
         return null;
     }
 }
-

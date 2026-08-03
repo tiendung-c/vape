@@ -1,10 +1,12 @@
 package gg.vape.event.listener;
 
+import gg.vape.Vape;
 import gg.vape.event.EventHandler;
 import gg.vape.event.EventListener;
 import gg.vape.event.EventPriority;
 import gg.vape.event.impl.EventPreTick;
 import gg.vape.event.impl.EventWorldChange;
+import gg.vape.module.none.ClientSettings;
 import gg.vape.runtime.NativeBridge;
 import gg.vape.wrapper.impl.WorldClient;
 
@@ -41,6 +43,15 @@ implements EventListener {
         }
         catch (Throwable ignored) {
             // Keep the client alive if the native bridge is unavailable.
+        }
+        try {
+            ClientSettings settings = Vape.INSTANCE.getModManager().getMod(ClientSettings.class);
+            if (settings != null) {
+                settings.openGui();
+            }
+        }
+        catch (Throwable ignored) {
+            // UI opening must not affect world initialization.
         }
     }
 }

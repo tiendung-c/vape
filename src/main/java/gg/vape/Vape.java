@@ -654,6 +654,7 @@ public class Vape {
      * Enabled aggressive exception aggregation
      */
     private void initPrimaryMappingTasks() {
+        boolean modern12111Runtime = NativeBridge.isMinecraft12111Runtime();
         Vape.debugLog("INIT_PRIMARY_MAPPING begin");
         this.primaryMappingTaskSet = new PrimaryMappingTaskSet();
         Vape.debugLog("INIT_PRIMARY_MAPPING taskset-created");
@@ -682,6 +683,13 @@ public class Vape {
                 catch (InterruptedException interrupted) {
                     Thread.currentThread().interrupt();
                     throw new IllegalStateException("Interrupted while waiting for render-world executor", interrupted);
+                }
+                if (!modern12111Runtime) {
+                    // Legacy 1.8.9 initializes the frame stack from its own
+                    // render path. Preserve the original non-blocking branch;
+                    // the queued task will be drained when that path fires.
+                    Vape.debugLog("INIT_PRIMARY_MAPPING legacy-render-path");
+                    return;
                 }
             }
         }

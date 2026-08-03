@@ -74,7 +74,7 @@ extends Mod {
         if (this.scaffold == null) {
             this.scaffold = Vape.INSTANCE.getModManager().getMod(Scaffold.class);
         }
-        if (this.scaffold.isActivelyScaffolding()) {
+        if (this.scaffold != null && this.scaffold.isActivelyScaffolding()) {
             return;
         }
         this.preAttackMotionX = player.t();
@@ -93,7 +93,7 @@ extends Mod {
         if (this.scaffold == null) {
             this.scaffold = Vape.INSTANCE.getModManager().getMod(Scaffold.class);
         }
-        if (this.scaffold.isActivelyScaffolding()) {
+        if (this.scaffold != null && this.scaffold.isActivelyScaffolding()) {
             return;
         }
         if (event.getThePlayer().F() <= 0.0f) {
@@ -121,4 +121,3 @@ extends Mod {
         }
     }
 }
-

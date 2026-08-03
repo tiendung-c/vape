@@ -19,8 +19,10 @@ import gg.vape.ui.click.frame.ModuleCategoryNavigationButtonComponent;
 import gg.vape.ui.click.frame.OutlinedFrameBase;
 import gg.vape.ui.click.frame.impl.profile.ProfilesFrameNavigationButtonComponent;
 import gg.vape.ui.click.frame.impl.profile.ProfilesSettingsFrame;
+import gg.vape.ui.click.frame.impl.profile.OfflineAccountsFrame;
 import gg.vape.ui.click.frame.impl.quickactions.QuickActionsFrame;
 import gg.vape.unmap.ModeSelection;
+import gg.vape.wrapper.impl.ForgeVersion;
 import gg.vape.utils.StringUtils;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -186,6 +188,9 @@ extends ModuleCategoryFrame {
             this.g(new ColorDividerComponent(ClientSettingsSearchFrame.J.m));
             this.g(new ProfilesFrameNavigationButtonComponent().addClickListener(new ClientSettingsSearchFrameClassOpenClickHandler(this, ProfilesSettingsFrame.class)));
             this.g(new FrameNavigationButtonComponent("Macros", null, FrameMacros.class).addClickListener(new ClientSettingsSearchFrameClassOpenClickHandler(this, FrameMacros.class)));
+            if (ForgeVersion.MC_1_8_9.L()) {
+                this.g(new FrameNavigationButtonComponent("Acoounts", "newprofiles", OfflineAccountsFrame.class).addClickListener(new ClientSettingsSearchFrameClassOpenClickHandler(this, OfflineAccountsFrame.class)));
+            }
             this.g(new ColorDividerComponent(ClientSettingsSearchFrame.J.m));
             this.g(new ClickGuiQuickActionsComponent());
         } else {

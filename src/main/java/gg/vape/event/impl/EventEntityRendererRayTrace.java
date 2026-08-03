@@ -41,14 +41,18 @@ extends Event {
             clutch = Vape.INSTANCE.getModManager().getMod(Clutch.class);
             blockIn = Vape.INSTANCE.getModManager().getMod(BlockIn.class);
         }
-        if (!mouseDelayFix.boolean_r() && !scaffold.boolean_r()) {
-            if (!blockIn.boolean_r()) {
-                if (!clutch.boolean_r()) {
+        if (!isEnabled(mouseDelayFix) && !isEnabled(scaffold)) {
+            if (!isEnabled(blockIn)) {
+                if (!isEnabled(clutch)) {
                     return false;
                 }
             }
         }
         return MappedClasses.z5.isInstance(this.entityHandle);
+    }
+
+    private static boolean isEnabled(gg.vape.module.Mod module) {
+        return module != null && module.boolean_r();
     }
 
     public Object getVec() {

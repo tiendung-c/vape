@@ -66,6 +66,9 @@ public class ModuleProfileMetadataCodec {
     }
 
     private void addModuleWithoutSaving(Mod module) {
+        if (module == null) {
+            return;
+        }
         if (this.selectedModules.contains(module)) {
             return;
         }
@@ -91,4 +94,3 @@ public class ModuleProfileMetadataCodec {
         return object;
     }
 }
-

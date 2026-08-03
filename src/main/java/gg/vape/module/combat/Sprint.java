@@ -40,7 +40,7 @@ extends Mod {
             return;
         }
         KeyBinding sprintKey = Minecraft.gameSettings().r();
-        boolean shouldStartSprinting = !this.scaffold.isActivelyScaffolding()
+        boolean shouldStartSprinting = (this.scaffold == null || !this.scaffold.isActivelyScaffolding())
                 && !Minecraft.thePlayer().B$src$Z$f90iek() && !Minecraft.thePlayer().r();
         if (!sprintKey.isKeyDown() && shouldStartSprinting) {
             KeyBinding.setKeyBindState(sprintKey, true);
@@ -52,4 +52,3 @@ extends Mod {
         this.addValue(this.cancelInvis);
     }
 }
-

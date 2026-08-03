@@ -153,6 +153,10 @@ implements Comparable<Profile> {
     }
 
     public void applyEnabledModuleStates() {
+        if (!gg.vape.module.none.ClientSettings.framesInitialized) {
+            Vape.debugLog("Profile module states deferred until UI frames are initialized");
+            return;
+        }
         Vape.INSTANCE.getModManager().applyProfileModuleStates(this);
     }
 
@@ -170,7 +174,8 @@ implements Comparable<Profile> {
 
     public void loadData(boolean applyModuleStates) {
         JsonArray array;
-        if (applyModuleStates && Vape.INSTANCE.getPublicProfileSettings().autoLoadModuleStates.getEffectiveValue().booleanValue()) {
+        boolean framesReady = gg.vape.module.none.ClientSettings.framesInitialized;
+        if (applyModuleStates && framesReady && Vape.INSTANCE.getPublicProfileSettings().autoLoadModuleStates.getEffectiveValue().booleanValue()) {
             Vape.INSTANCE.getModManager().disableNonHudModules();
         }
         if (this.data.get("values") != null && !this.data.get("values").isJsonNull()) {
@@ -189,17 +194,19 @@ implements Comparable<Profile> {
             array = this.data.get("search").getAsJsonArray();
             Vape.INSTANCE.getSearch().loadJson(array);
         }
-        if (applyModuleStates && Vape.INSTANCE.getPublicProfileSettings().autoLoadModuleStates.getEffectiveValue().booleanValue()) {
+        if (applyModuleStates && framesReady && Vape.INSTANCE.getPublicProfileSettings().autoLoadModuleStates.getEffectiveValue().booleanValue()) {
             this.applyEnabledModuleStates();
         }
         for (Mod mod : Vape.INSTANCE.getModManager().collectMods()) {
             if (!mod.isEnabled()) continue;
             mod.syncSubModuleStates(true, true);
         }
-        Vape.INSTANCE.getModManager().disableHiddenModules();
-        gg.vape.module.none.ClientSettings.refreshModuleCategoryHeaders();
-        gg.vape.module.none.ClientSettings.closeListDropdowns();
-        if (this.data.get("frames") != null && !this.data.get("frames").isJsonNull() && Vape.INSTANCE.getPublicProfileSettings().framePositionsPerProfile.getEffectiveValue().booleanValue()) {
+        if (framesReady) {
+            Vape.INSTANCE.getModManager().disableHiddenModules();
+            gg.vape.module.none.ClientSettings.refreshModuleCategoryHeaders();
+            gg.vape.module.none.ClientSettings.closeListDropdowns();
+        }
+        if (framesReady && this.data.get("frames") != null && !this.data.get("frames").isJsonNull() && Vape.INSTANCE.getPublicProfileSettings().framePositionsPerProfile.getEffectiveValue().booleanValue()) {
             array = this.data.get("frames").getAsJsonArray();
             JsonArray frameGroups = new JsonArray();
             frameGroups.add((JsonElement)array);
@@ -284,6 +291,10 @@ implements Comparable<Profile> {
     }
 
     public void applyLegitEnabledModuleStates() {
+        if (!gg.vape.module.none.ClientSettings.framesInitialized) {
+            Vape.debugLog("Profile HUD states deferred until UI frames are initialized");
+            return;
+        }
         Vape.INSTANCE.getModManager().applyHudModuleStates(this.legitEnabledModuleStates);
     }
 

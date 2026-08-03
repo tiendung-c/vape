@@ -7,6 +7,7 @@ import gg.vape.module.combat.HitSwap;
 import gg.vape.module.combat.CrystalAura;
 import gg.vape.module.combat.Sprint;
 import gg.vape.module.utility.AutoTotem;
+import gg.vape.module.utility.AutoPearl;
 import gg.vape.module.utility.WindCharge;
 import gg.vape.wrapper.impl.ForgeVersion;
 
@@ -22,6 +23,7 @@ extends BuiltinProfile {
         this.selectModule(Sprint.class);
         this.selectModule(CrystalAura.class);
         this.selectModule(AutoTotem.class);
+        this.selectModule(AutoPearl.class);
         this.selectModule(AutoAnchor.class);
         this.selectModule(WindCharge.class);
     }

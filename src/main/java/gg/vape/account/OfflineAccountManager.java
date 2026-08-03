@@ -115,6 +115,53 @@ public final class OfflineAccountManager {
         return applied;
     }
 
+    /**
+     * Adds an offline account (or selects it when it already exists) and
+     * applies it to the current 1.8.9 Minecraft session.
+     */
+    public boolean addAndApply(String name) {
+        if (!ForgeVersion.MC_1_8_9.L()) return false;
+        if (!isValidName(name)) {
+            if (Vape.INSTANCE.getNotificationManager() != null) {
+                Vape.INSTANCE.getNotificationManager().showInfo(
+                        "Offline account",
+                        "Tên account phải dài 1-16 ký tự, chỉ gồm chữ, số hoặc _.",
+                        5000L);
+            }
+            return false;
+        }
+        for (int index = 0; index < this.accountNames.size(); ++index) {
+            if (!this.accountNames.get(index).equalsIgnoreCase(name)) continue;
+            this.activeIndex = index;
+            boolean applied = this.applyActive();
+            if (applied) this.save();
+            return applied;
+        }
+        this.accountNames.add(name);
+        this.activeIndex = this.accountNames.size() - 1;
+        boolean applied = this.applyActive();
+        if (applied) {
+            this.save();
+        } else {
+            this.accountNames.remove(this.accountNames.size() - 1);
+            this.activeIndex = Math.max(0, this.accountNames.size() - 1);
+        }
+        return applied;
+    }
+
+    /** Selects an existing account from the Accounts screen. */
+    public boolean selectAndApply(String name) {
+        if (!ForgeVersion.MC_1_8_9.L() || name == null) return false;
+        for (int index = 0; index < this.accountNames.size(); ++index) {
+            if (!this.accountNames.get(index).equalsIgnoreCase(name)) continue;
+            this.activeIndex = index;
+            boolean applied = this.applyActive();
+            if (applied) this.save();
+            return applied;
+        }
+        return false;
+    }
+
     public boolean applyActive() {
         if (!ForgeVersion.MC_1_8_9.L() || this.accountNames.isEmpty()) {
             return false;

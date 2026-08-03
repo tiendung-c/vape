@@ -24,7 +24,6 @@ import gg.vape.rotation.MouseRotationController;
 import gg.vape.rotation.RotationAngles;
 import gg.vape.rotation.RotationControlClaim;
 import gg.vape.rotation.RotationManager;
-import gg.vape.runtime.NativeBridge;
 import gg.vape.unmap.ItemLimitData;
 import gg.vape.unmap.ModeOption;
 import gg.vape.unmap.ModeSelection;
@@ -34,6 +33,7 @@ import gg.vape.utils.EntityDistanceComparator;
 import gg.vape.utils.EntityEquipmentValueComparator;
 import gg.vape.utils.EntityHealthComparator;
 import gg.vape.utils.MathUtil;
+import gg.vape.utils.AttackCooldownUtil;
 import gg.vape.utils.RayTraceUtil;
 import gg.vape.utils.RotationUtil;
 import gg.vape.utils.TimerUtil;
@@ -124,6 +124,11 @@ extends Mod {
     public ModeValue targetArea;
     public ModeValue targetMode;
     private boolean deathHandled = false;
+    private boolean modernAttackReleasePending = false;
+
+    private static boolean isModern21Runtime() {
+        return ForgeVersion.MC_1_21_0.d();
+    }
 
     public EntityLivingBase getTarget() {
         return this.target;
@@ -179,7 +184,7 @@ extends Mod {
 
     @Override
     public String getDetailedSuffix() {
-        if (NativeBridge.isMinecraft12111Runtime() && this.modernHitDelay != null) {
+        if (isModern21Runtime() && this.modernHitDelay != null) {
             return this.modernHitDelay.getDisplayValue() + "ms";
         }
         if (ForgeVersion.MC_1_12_2.d() && this.perfectSwing.getEffectiveValue().booleanValue()) {
@@ -231,8 +236,9 @@ extends Mod {
     }
 
     public boolean isAttackCooldownReady() {
-        if (NativeBridge.isMinecraft12111Runtime() && this.modernHitDelay != null) {
-            return this.modernHitDelayTimer.hasTimeElapsed(Math.round(this.modernHitDelay.getValue()));
+        if (isModern21Runtime() && this.modernHitDelay != null) {
+            return AttackCooldownUtil.isAttackReady(0.0f)
+                    && this.modernHitDelayTimer.hasTimeElapsed(Math.round(this.modernHitDelay.getValue()));
         }
         if (ForgeVersion.MC_1_12_2.d() && this.perfectSwing.getEffectiveValue().booleanValue()) {
             float attackStrength = Minecraft.thePlayer().getCooledAttackStrength(0.0f);
@@ -266,7 +272,7 @@ extends Mod {
     }
 
     public SilentAura() {
-        super("SilentAura", (int)MODULE_ID, Category.COMBAT, "Simulates feel of Killaura\nAttacks and aims safely using built in AutoClicker to click, and Silent Aim system to aim");
+        super("SilentAura", (int)MODULE_ID, Category.COMBAT, "Simulates feel of Killaura\nAttacks using the game's hit timing and silently aims at valid targets");
         this.requireMouseDown = BooleanValue.create(this, "Require mouse down", false);
         this.disableOnDeath = BooleanValue.create(this, "Disable on death", false);
         this.showTarget = BooleanValue.create(this, "Show target", false);
@@ -301,10 +307,11 @@ extends Mod {
         this.xJitter = new SilentAuraAimJitter(-0.15, 0.15);
         this.zJitter = new SilentAuraAimJitter(-0.15, 0.15);
         this.perfectSwing.whenEqualTo(false).applyTo(this.attackRate);
-        this.addValue(this.targetFilter, this.aimSpeed, this.attackRate, this.extraSwingDistance, this.maxAngle, this.targetMode, this.targetArea);
-        if (NativeBridge.isMinecraft12111Runtime()) {
-            this.modernHitDelay = NumberValue.createWithDescription(this, "Hit delay", "#", "ms", 0.0, 100.0, 1000.0, "Minimum delay between SilentAura attacks on Minecraft 1.21.11");
-            this.addValue(this.modernHitDelay);
+        if (isModern21Runtime()) {
+            this.modernHitDelay = NumberValue.createWithDescription(this, "Hit delay", "#", "ms", 0.0, 100.0, 1000.0, "Minimum delay between SilentAura attacks on Minecraft 1.21");
+            this.addValue(this.targetFilter, this.aimSpeed, this.modernHitDelay, this.extraSwingDistance, this.maxAngle, this.targetMode, this.targetArea);
+        } else {
+            this.addValue(this.targetFilter, this.aimSpeed, this.attackRate, this.extraSwingDistance, this.maxAngle, this.targetMode, this.targetArea);
         }
         this.showTarget.addDependentValues(this.targetColor, this.attackColor, this.renderType);
         this.breakBlocks.addDependentValues(this.breakBlocksDelay, this.breakBlocksWhitelist);
@@ -324,11 +331,12 @@ extends Mod {
     @Override
     public void onEnable() {
         this.modernHitDelayTimer.reset();
+        this.modernAttackReleasePending = false;
         super.onEnable();
     }
 
     public void onAttackIssued() {
-        if (NativeBridge.isMinecraft12111Runtime() && this.modernHitDelay != null) {
+        if (isModern21Runtime() && this.modernHitDelay != null) {
             this.modernHitDelayTimer.reset();
         }
     }
@@ -372,6 +380,10 @@ extends Mod {
 
     @EventHandler(priority=EventPriority.LOWEST)
     public void onTick(EventPreTick eventPreTick) {
+        if (this.modernAttackReleasePending) {
+            AttackKeyController.releaseAttackKey();
+            this.modernAttackReleasePending = false;
+        }
         this.breakingBlocks = this.handleBreakBlocks();
         if (this.perfectSwingAttackPending) {
             this.perfectSwingAttackPending = false;
@@ -385,11 +397,13 @@ extends Mod {
             this.resetTargeting();
             return;
         }
-        if (clicker == null) {
-            clicker = Vape.INSTANCE.getModManager().getMod(SilentAuraClicker.class);
-        }
-        if (!clicker.isEnabled()) {
-            clicker.setEnabled(true);
+        if (!isModern21Runtime()) {
+            if (clicker == null) {
+                clicker = Vape.INSTANCE.getModManager().getMod(SilentAuraClicker.class);
+            }
+            if (clicker != null && !clicker.isEnabled()) {
+                clicker.setEnabled(true);
+            }
         }
         this.updateRotationColors();
         if (this.disableOnDeath.getEffectiveValue().booleanValue()) {
@@ -428,6 +442,13 @@ extends Mod {
         }
         this.updateTarget();
         this.updateAim();
+        if (isModern21Runtime() && this.canAttack()) {
+            AttackKeyController.releaseAttackKey();
+            this.modernAttackReleasePending = AttackKeyController.requestSyntheticAttack(this);
+            if (this.modernAttackReleasePending) {
+                this.onAttackIssued();
+            }
+        }
         if (ForgeVersion.MC_1_12_2.d() && this.perfectSwing.getEffectiveValue().booleanValue() && this.canAttack()) {
             AttackKeyController.releaseAttackKey();
             this.perfectSwingAttackPending = AttackKeyController.requestSyntheticAttack(this);
@@ -669,6 +690,10 @@ extends Mod {
 
     @Override
     public void onDisable() {
+        this.modernAttackReleasePending = false;
+        if (isModern21Runtime()) {
+            AttackKeyController.releaseAttackKey();
+        }
         if (this.rotationController != null) {
             this.rotationController = null;
         }

@@ -8,9 +8,6 @@ import gg.vape.module.none.ClientSettings;
  * is disabled. It does not change Minecraft's world/render-distance settings.
  */
 public class FpsBoostHudModule extends HudModule {
-    private boolean savedBlurBackground;
-    private boolean stateCaptured;
-
     public FpsBoostHudModule() {
         super("FPS Boost", HudModuleGroup.GAME, "fps_boost");
         this.setSuffix("Disables the expensive GUI blur pass");
@@ -30,19 +27,18 @@ public class FpsBoostHudModule extends HudModule {
         if (settings == null) {
             return;
         }
-        this.savedBlurBackground = settings.blurBackground.getEffectiveValue();
-        this.stateCaptured = true;
-        if (this.savedBlurBackground) {
-            settings.blurBackground.setValue(false);
-            settings.disableBlurShader();
-        }
+        // FPS Boost intentionally owns this setting: GUI blur is disabled while
+        // the performance module is active and is not restored by this module.
+        settings.blurBackground.setValue(false);
+        settings.disableBlurShader();
     }
 
     @Override
     public void onDisable() {
-        if (this.stateCaptured && ClientSettings.INSTANCE != null) {
-            ClientSettings.INSTANCE.blurBackground.setValue(this.savedBlurBackground);
+        // Keep blur disabled; restoring it here reintroduces the shader failure.
+        if (ClientSettings.INSTANCE != null) {
+            ClientSettings.INSTANCE.blurBackground.setValue(false);
+            ClientSettings.INSTANCE.disableBlurShader();
         }
-        this.stateCaptured = false;
     }
 }

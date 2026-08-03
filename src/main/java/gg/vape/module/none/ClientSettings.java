@@ -7,6 +7,7 @@ import com.google.gson.JsonObject;
 import func.skidline.RectData;
 import gg.vape.Vape;
 import gg.vape.config.PublicProfileSettings;
+import gg.vape.config.Profile;
 import gg.vape.event.EventHandler;
 import gg.vape.event.impl.EventKeyPress;
 import gg.vape.event.impl.EventMouseButton;
@@ -65,6 +66,7 @@ import gg.vape.ui.click.frame.impl.hud.ScoreboardHudFrame;
 import gg.vape.ui.click.frame.impl.main.ClickGuiFrameManager;
 import gg.vape.ui.click.frame.impl.main.ClickGuiLayer;
 import gg.vape.ui.click.frame.impl.profile.ProfileSnapshotFrame;
+import gg.vape.ui.click.frame.impl.profile.OfflineAccountsFrame;
 import gg.vape.ui.click.frame.impl.profile.ProfilesSettingsFrame;
 import gg.vape.ui.click.frame.impl.quickactions.QuickActionsFrame;
 import gg.vape.ui.click.frame.impl.target.TargetInfoSettingsFrame;
@@ -361,7 +363,15 @@ extends Mod {
         }
     }
     public void openGui() {
-        this.setInputEnabled(false);
+        if (!framesInitialized) {
+            return;
+        }
+        if (!this.isEnabled()) {
+            this.setEnabled(true, true);
+        }
+        if (this.isEnabled()) {
+            this.setInputEnabled(false);
+        }
     }
 
     @EventHandler
@@ -618,6 +628,7 @@ extends Mod {
     }
 
     public static void initializeFrames() {
+        framesInitialized = false;
         for (FrameStackManager frameStackManager : allStacks) {
             frameStackManager.Y().clear();
         }
@@ -643,6 +654,9 @@ extends Mod {
         ClientSettings.registerFrame((Frame)new ModuleCategoryFrame(Category.INVENTORY), mainStack);
         ClientSettings.registerFrame((Frame)new VisibleModuleListFrame(), mainStack);
         ClientSettings.registerFrame((Frame)new ProfilesSettingsFrame(), mainStack);
+        if (ForgeVersion.MC_1_8_9.L()) {
+            ClientSettings.registerFrame((Frame)new OfflineAccountsFrame(), mainStack);
+        }
         ClientSettings.registerFrame((Frame)new FrameMacros(), mainStack);
         ClientSettings.registerFrame((Frame)new QuickActionsFrame(), mainStack);
         ClientSettings.registerFrame((Frame)new TextGuiSettingsFrame(), mainStack);
@@ -662,6 +676,17 @@ extends Mod {
         ClientSettings.refreshModuleCategoryHeaders();
         VisibleModuleListFrame.e();
         framesInitialized = true;
+        if (Vape.INSTANCE.getProfilesManager() != null) {
+            Profile activeProfile = Vape.INSTANCE.getProfilesManager().getActiveProfileOrNull();
+            if (activeProfile != null) {
+                activeProfile.applyEnabledModuleStates();
+                activeProfile.applyLegitEnabledModuleStates();
+            }
+        }
+        ClientSettings settings = Vape.INSTANCE.getModManager().getMod(ClientSettings.class);
+        if (settings != null) {
+            settings.openGui();
+        }
     }
 
     @EventHandler
@@ -712,6 +737,9 @@ extends Mod {
     }
 
     public static void closeListDropdowns() {
+        if (ClientSettings.INSTANCE == null || ClientSettings.INSTANCE.activeStack == null) {
+            return;
+        }
         for (Frame frame : ClientSettings.INSTANCE.activeStack.Y()) {
             if (!(frame instanceof ListValueDropdownLayer)) continue;
             ((ListValueDropdownLayer)frame).refreshContents();
@@ -898,9 +926,7 @@ extends Mod {
     }
 
     public void disableBlurShader() {
-        if (((ClientSettings)Vape.INSTANCE.getModManager().getMod(ClientSettings.class)).blurBackground.getEffectiveValue().booleanValue()) {
-            ShaderGroupRenderStateManager.getInstance().disable();
-        }
+        ShaderGroupRenderStateManager.getInstance().disable();
     }
 
     public void switchFrameStack(FrameStackManager frameStackManager) {

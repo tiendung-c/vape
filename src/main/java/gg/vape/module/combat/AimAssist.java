@@ -7,6 +7,7 @@ import gg.vape.module.Category;
 import gg.vape.module.Mod;
 import gg.vape.module.combat.aimassist.AimAssistRotationSubModule;
 import gg.vape.module.combat.aimassist.AimAssistTargetingSubModule;
+import gg.vape.module.combat.aimassist.AimModeMyau;
 import gg.vape.module.control.SharedModuleControlClaims;
 import gg.vape.unmap.ItemLimitData;
 import gg.vape.unmap.ModeOption;
@@ -49,6 +50,7 @@ extends Mod {
     public final ModeOption threatMode;
     private final NumberValue horizontalSpeed;
     private final AimAssistRotationSubModule simpleRotation = new AimAssistRotationSubModule(this, "Simple");
+    private final AimModeMyau myauMode = new AimModeMyau(this, "OpenMyau");
     private final LimitValue allowedItems;
     private final NumberValue maxAngle;
     private final BooleanValue limitToItems;
@@ -164,7 +166,7 @@ extends Mod {
     public AimAssist() {
         super("AimAssist", -327674, Category.COMBAT, "Smoothly aims to closest valid target");
         this.adaptiveTargeting = new AimAssistTargetingSubModule(this, "Adaptive");
-        this.mode = ModeValue.create((Object)this, "Mode", "Simple - Lightweight smooth aiming\nAdaptive - Advanced tracking with adaptive behavior", (ModeSelection)this.simpleRotation.getSelectionValue(), this.simpleRotation.getSelectionValue(), this.adaptiveTargeting.getSelectionValue());
+        this.mode = ModeValue.create((Object)this, "Mode", "Simple - Lightweight smooth aiming\nAdaptive - Advanced tracking with adaptive behavior\nOpenMyau - OpenMyau-style nearest-target smoothing", (ModeSelection)this.simpleRotation.getSelectionValue(), this.simpleRotation.getSelectionValue(), this.adaptiveTargeting.getSelectionValue(), this.myauMode.getSelectionValue());
         this.targetFilter = EntityTargetFilterValue.createForModule(this);
         this.requireMouseDown = BooleanValue.create(this, "Require mouse down", true, "Only aim while mouse is down");
         this.aimVertically = BooleanValue.create(this, "Aim vertically", false, "Aims up and down as well");
@@ -256,4 +258,3 @@ extends Mod {
     }
 
 }
-
