@@ -137,12 +137,13 @@ extends SubModule<AimAssist> {
         if (adjustment != 0.0f) {
             adjustment *= 5.0f;
             float speed = ((Double)aimAssist.getVerticalSpeed().getValue()).floatValue();
-            if (angleDifference <= 10.0f) {
+            float absoluteAngleDifference = Math.abs(angleDifference);
+            if (absoluteAngleDifference <= 10.0f) {
                 this.yawBoost = speed;
             }
             if (this.yawBoost > 0.0f) {
                 speed -= this.yawBoost / 3.0f;
-                this.yawBoost -= angleDifference / 200.0f;
+                this.yawBoost -= absoluteAngleDifference / 200.0f;
             }
             this.verticalMouseAccumulator += speed * adjustment;
         } else {
@@ -284,7 +285,7 @@ extends SubModule<AimAssist> {
         }
 
         float horizontalAcceleration = horizontalForce / 90.0f * (targetOnLeft ? -1.0f : 1.0f);
-        float verticalAcceleration = targetAbove ? verticalForce : -(verticalForce / 90.0f);
+        float verticalAcceleration = verticalForce / 90.0f * (targetAbove ? 1.0f : -1.0f);
         if (horizontalAngleDifference < 5.0) {
             horizontalAcceleration = 0.0f;
             this.horizontalVelocity *= 0.7f;

@@ -1416,9 +1416,7 @@ public class MappedClasses {
         if (string3 != null) {
             string = string3;
         }
-        if ((bl2 = Vape.INSTANCE.isForgeAbsent()) && Vape.INSTANCE.isVanillaMinecraftPresent() && ForgeVersion.MC_1_20_6.d()) {
-            bl2 = false;
-        }
+        bl2 = Vape.INSTANCE.isForgeAbsent();
         if (!Vape.INSTANCE.isForgeRemapActive()) {
             Class<?> clazz = NativeBridge.loadRuntimeClassForMappings(string.replace("/", "."));
             if (clazz == null) {

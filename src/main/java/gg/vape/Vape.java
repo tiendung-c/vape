@@ -401,7 +401,7 @@ public class Vape {
             return false;
         }
         String vanillaMinecraftClass = "net/minecraft/client/Minecraft";
-        this.vanillaMinecraftPresentCache = NativeBridge.gc(vanillaMinecraftClass) != null;
+        this.vanillaMinecraftPresentCache = NativeBridge.gvc(vanillaMinecraftClass) != null;
         return this.vanillaMinecraftPresentCache;
     }
 
@@ -654,22 +654,34 @@ public class Vape {
      * Enabled aggressive exception aggregation
      */
     private void initPrimaryMappingTasks() {
-        int opaqueSeed = Vape.opaquePredicate();
+        Vape.debugLog("INIT_PRIMARY_MAPPING begin");
         this.primaryMappingTaskSet = new PrimaryMappingTaskSet();
+        Vape.debugLog("INIT_PRIMARY_MAPPING taskset-created");
         this.primaryMappingTaskSet.L();
+        Vape.debugLog("INIT_PRIMARY_MAPPING executor-hook-added");
         this.primaryMappingTaskSet.d();
-        int opaqueBranch = opaqueSeed;
+        Vape.debugLog("INIT_PRIMARY_MAPPING taskset-applied");
         EventRenderWorldPassExecutorDrain.EXECUTOR.execute(ClientSettings::initializeFrames);
+        Vape.debugLog("INIT_PRIMARY_MAPPING frame-task-queued");
+        long waitDeadline = System.nanoTime() + 300000000000L;
+        long nextStatusLog = System.nanoTime() + 5000000000L;
         try {
             while (!ClientSettings.framesInitialized) {
+                long now = System.nanoTime();
+                if (now >= waitDeadline) {
+                    Vape.logError("INIT_PRIMARY_MAPPING timeout: render-world executor did not initialize frames within 5 minutes");
+                    throw new IllegalStateException("Timed out waiting for render-world executor");
+                }
+                if (now >= nextStatusLog) {
+                    Vape.debugLog("INIT_PRIMARY_MAPPING waiting-for-render-drain");
+                    nextStatusLog = now + 5000000000L;
+                }
                 try {
                     Thread.sleep(10L);
-                    if (opaqueBranch != 0) return;
                 }
                 catch (InterruptedException interrupted) {
-                    Vape.logThrowable(interrupted);
-                    if (opaqueBranch == 0) continue;
-                    break;
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("Interrupted while waiting for render-world executor", interrupted);
                 }
             }
         }
@@ -681,7 +693,9 @@ public class Vape {
                 throw Vape.rethrow(retriedCompletionException);
             }
         }
+        Vape.debugLog("INIT_PRIMARY_MAPPING frames-initialized");
         this.primaryMappingTaskSet.C();
+        Vape.debugLog("INIT_PRIMARY_MAPPING complete");
     }
 
     public IndependentSettingsManager getSettingsManager() {

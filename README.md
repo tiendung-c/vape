@@ -237,6 +237,25 @@ VapeV4.21-main/
       └─ README.md
 ```
 
+### Ghi chú LWJGL khi build
+
+Payload mặc định không đóng gói lại LWJGL2. Minecraft/Fabric hiện đại đã cung
+cấp LWJGL3; nếu nhúng thêm LWJGL2, `org.lwjgl.BufferUtils` có thể gọi
+`DefaultSysImplementation` và gây `UnsatisfiedLinkError` trong lúc tạo giao
+diện.
+
+Build mặc định:
+
+```powershell
+.\gradlew.bat prepareInjectionBundle
+```
+
+Chỉ dùng payload LWJGL2 riêng cho runtime 1.8.9 độc lập:
+
+```powershell
+.\gradlew.bat -PexcludeLegacyLwjgl=false prepareInjectionBundle
+```
+
 ## 10. Yêu cầu build
 
 - Windows x64.

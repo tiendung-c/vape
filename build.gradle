@@ -20,6 +20,10 @@ sourceSets {
     }
 }
 
+configurations {
+    vanilla189Mappings
+}
+
 dependencies {
     implementation 'org.javassist:javassist:3.29.2-GA'
     implementation 'org.ow2.asm:asm:9.7.1'
@@ -34,6 +38,45 @@ dependencies {
     implementation 'org.lwjgl.lwjgl:lwjgl:2.9.3'
     implementation 'org.lwjgl.lwjgl:lwjgl_util:2.9.3'
     compileOnly 'org.jetbrains:annotations:24.1.0'
+    vanilla189Mappings 'de.oceanlabs.mcp:mcp:1.8.9:srg@zip'
+}
+
+def vanilla189GeneratedResources = layout.buildDirectory.dir('generated-resources')
+tasks.register('extractVanilla189Mappings', Sync) {
+    from({ configurations.vanilla189Mappings.collect { zipTree(it).matching { include 'joined.srg' } } }) {
+        into 'mappings/vanilla189'
+    }
+    into vanilla189GeneratedResources
+}
+def modern12111ResourceFiles = [
+        'mappings/forge12111/fields.csv',
+        'mappings/forge12111/methods.csv',
+        'mappings/vanilla12111/joined.srg',
+        'mappings/fabric12111/joined.srg'
+]
+def modern12111RawRoot = 'https://raw.githubusercontent.com/OpenVapeCN/VapeV4.21/695a393bb53cc87542b4e514fe452eccc156f967/src/main/resources/'
+tasks.register('fetchModern12111Mappings') {
+    outputs.files(modern12111ResourceFiles.collect {
+        layout.buildDirectory.file("generated-resources/${it}")
+    })
+    doLast {
+        modern12111ResourceFiles.each { relativePath ->
+            File target = file("${buildDir}/generated-resources/${relativePath}")
+            if (target.exists() && target.length() > 0L) {
+                return
+            }
+            target.parentFile.mkdirs()
+            URL resourceUrl = new URL(modern12111RawRoot + relativePath)
+            resourceUrl.openStream().withCloseable { input ->
+                target.withOutputStream { output -> output << input }
+            }
+        }
+    }
+}
+sourceSets.main.resources.srcDir(vanilla189GeneratedResources)
+tasks.named('processResources') {
+    dependsOn(tasks.named('extractVanilla189Mappings'))
+    dependsOn(tasks.named('fetchModern12111Mappings'))
 }
 
 configurations.configureEach {
@@ -117,7 +160,11 @@ idea {
     }
 }
 
-def excludeLegacyLwjgl = (project.findProperty('excludeLegacyLwjgl') ?: 'false').toString().toBoolean()
+// Modern Minecraft/Fabric ships LWJGL3. Keeping the bundled LWJGL2 classes
+// makes BufferUtils initialize through DefaultSysImplementation and fail with
+// UnsatisfiedLinkError. Use the game's runtime LWJGL by default; the legacy
+// bundle can still be requested explicitly for an isolated 1.8.9 runtime.
+def excludeLegacyLwjgl = (project.findProperty('excludeLegacyLwjgl') ?: 'true').toString().toBoolean()
 
 tasks.register('injectionJar', com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar) {
     group = 'injection'
@@ -177,6 +224,15 @@ tasks.register('verifyInjectionPayload') {
         new java.util.jar.JarFile(payload).withCloseable { archive ->
             if (archive.getEntry('gg/vape/runtime/NativeBridge.class') == null) {
                 throw new GradleException('injection payload is missing NativeBridge.class')
+            }
+            if (archive.getEntry('gg/vape/reflect/Vanilla189Mappings.class') == null) {
+                throw new GradleException('injection payload is missing Vanilla189Mappings.class')
+            }
+            ['gg/vape/reflect/Vanilla12111Mappings.class',
+             'gg/vape/reflect/Fabric12111Mappings.class'].each { requiredClass ->
+                if (archive.getEntry(requiredClass) == null) {
+                    throw new GradleException("injection payload is missing ${requiredClass}")
+                }
             }
             archive.entries().each { entry ->
                 if (!entry.name.endsWith('.class')) {

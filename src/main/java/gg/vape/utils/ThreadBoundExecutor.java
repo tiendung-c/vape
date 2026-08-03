@@ -1,5 +1,6 @@
 package gg.vape.utils;
 
+import gg.vape.Vape;
 import gg.vape.ui.click.component.GuiComponent;
 import java.util.ArrayDeque;
 import java.util.Queue;
@@ -33,8 +34,11 @@ implements Executor {
         while ((this.currentTask = this.pendingTasks.poll()) != null) {
             try {
                 this.currentTask.run();
+            } catch (Throwable error) {
+                Vape.debugLog("ThreadBoundExecutor task failed: "
+                    + error.getClass().getName()
+                    + (error.getMessage() == null ? "" : " -> " + error.getMessage()));
             }
-            catch (Throwable ignored) {}
         }
     }
 

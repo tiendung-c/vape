@@ -10,10 +10,12 @@ public class MappingTaskSet {
     protected List<MappingTask> D = new ArrayList<MappingTask>();
 
     public void d() {
+        Vape.debugLog("MAPPING_TASKS begin: " + this.D.size());
         int n = 0;
         for (MappingTask mappingTask : this.D) {
             ++n;
             if (mappingTask.isApplied()) continue;
+            Vape.debugLog("MAPPING_TASK " + n + " start: " + mappingTask.getClass().getSimpleName());
             int n2 = 0;
             String phase = "prepare";
             try {
@@ -42,6 +44,7 @@ public class MappingTaskSet {
             if (Vape.INSTANCE.getNotificationManager() == null) continue;
             Vape.INSTANCE.getNotificationManager().show("Error with injection", "Please report to support:\nError code " + string + "\n\nSome features may not function", NotificationType.ALERT, 30000L, true);
         }
+        Vape.debugLog("MAPPING_TASKS complete");
     }
 
     private static String targetName(MappingTask mappingTask) {

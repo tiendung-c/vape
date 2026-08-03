@@ -1,6 +1,7 @@
 package gg.vape.reflect;
 
 import gg.vape.wrapper.impl.ForgeVersion;
+import gg.vape.runtime.NativeBridge;
 import java.io.BufferedReader;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -22,6 +23,11 @@ public final class MappingRegistry {
     private static final String RESOURCE_DIRECTORY = getResourceDirectory();
     private static final String METHODS_RESOURCE = RESOURCE_DIRECTORY + "/methods.csv";
     private static final String FIELDS_RESOURCE = RESOURCE_DIRECTORY + "/fields.csv";
+    private static final int VANILLA_MAPPING_VERSION =
+            NativeBridge.isForgeAbsent() ? ForgeVersion.c() : 0;
+    private static final boolean FABRIC_12111_RUNTIME =
+            VANILLA_MAPPING_VERSION == ForgeVersion.MC_1_21_11.i()
+                    && NativeBridge.isFabric12111Runtime();
 
     private MappingRegistry() {
     }
@@ -38,6 +44,8 @@ public final class MappingRegistry {
                 return "mappings/forge1164";
             case 36:
                 return "mappings/forge1165";
+            case 61:
+                return "mappings/forge12111";
             default:
                 return "mappings/forge189";
         }
@@ -57,11 +65,45 @@ public final class MappingRegistry {
     }
 
     public static boolean matches(Method method, String requestedName) {
-        return MappingRegistry.matches(method.getName(), requestedName, METHODS, METHODS_REVERSED);
+        if (MappingRegistry.matches(method.getName(), requestedName, METHODS, METHODS_REVERSED)) {
+            return true;
+        }
+        String srgName = lookupVanillaMethodSrgName(method);
+        return srgName != null && MappingRegistry.matches(
+                srgName, requestedName, METHODS, METHODS_REVERSED);
     }
 
     public static boolean matches(Field field, String requestedName) {
-        return MappingRegistry.matches(field.getName(), requestedName, FIELDS, FIELDS_REVERSED);
+        if (MappingRegistry.matches(field.getName(), requestedName, FIELDS, FIELDS_REVERSED)) {
+            return true;
+        }
+        String srgName = lookupVanillaFieldSrgName(field);
+        return srgName != null && MappingRegistry.matches(
+                srgName, requestedName, FIELDS, FIELDS_REVERSED);
+    }
+
+    private static String lookupVanillaMethodSrgName(Method method) {
+        if (VANILLA_MAPPING_VERSION == ForgeVersion.MC_1_8_9.i()) {
+            return Vanilla189Mappings.lookupMethodSrgName(method);
+        }
+        if (VANILLA_MAPPING_VERSION == ForgeVersion.MC_1_21_11.i()) {
+            return FABRIC_12111_RUNTIME
+                    ? Fabric12111Mappings.lookupMethodSrgName(method)
+                    : Vanilla12111Mappings.lookupMethodSrgName(method);
+        }
+        return null;
+    }
+
+    private static String lookupVanillaFieldSrgName(Field field) {
+        if (VANILLA_MAPPING_VERSION == ForgeVersion.MC_1_8_9.i()) {
+            return Vanilla189Mappings.lookupFieldSrgName(field);
+        }
+        if (VANILLA_MAPPING_VERSION == ForgeVersion.MC_1_21_11.i()) {
+            return FABRIC_12111_RUNTIME
+                    ? Fabric12111Mappings.lookupFieldSrgName(field)
+                    : Vanilla12111Mappings.lookupFieldSrgName(field);
+        }
+        return null;
     }
 
     private static boolean matches(String actualName, String requestedName, Map<String, Set<String>> namesToSrg, Map<String, Set<String>> srgToNames) {

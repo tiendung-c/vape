@@ -361,6 +361,138 @@ static jobject find_client_class_loader(JNIEnv *env) {
     return result;
 }
 
+/*
+ * Fabric defines game classes in its Knot target ClassLoader. Installing the
+ * payload in a child loader would give transformed game classes a different
+ * class identity, so use Fabric's runtime classpath API instead.
+ */
+static int install_fabric_payload_search(
+        JNIEnv *env, jobject *loader, jobject file) {
+    jclass loader_class;
+    jclass file_class;
+    jclass string_class;
+    jclass launcher_base_class;
+    jclass launcher_class;
+    jclass class_class;
+    jmethodID load_class;
+    jmethodID to_path;
+    jmethodID get_launcher;
+    jmethodID get_target_loader;
+    jmethodID add_to_class_path;
+    jmethodID get_class_loader;
+    jstring launcher_base_name;
+    jstring payload_event_name;
+    jobject launcher;
+    jobject target_loader;
+    jobject path;
+    jobjectArray allowed_prefixes;
+    jclass payload_event_class;
+    jobject payload_event_loader;
+    jobject retained_target_loader;
+
+    loader_class = (*env)->FindClass(env, "java/lang/ClassLoader");
+    load_class = loader_class == NULL ? NULL : (*env)->GetMethodID(
+            env, loader_class, "loadClass",
+            "(Ljava/lang/String;)Ljava/lang/Class;");
+    launcher_base_name = (*env)->NewStringUTF(env,
+            "net.fabricmc.loader.impl.launch.FabricLauncherBase");
+    if (load_class == NULL || launcher_base_name == NULL) {
+        vape_log_pending_exception(env, L"resolve Fabric ClassLoader methods");
+        return -1;
+    }
+    launcher_base_class = (jclass)(*env)->CallObjectMethod(
+            env, *loader, load_class, launcher_base_name);
+    if (launcher_base_class == NULL || (*env)->ExceptionCheck(env)) {
+        if ((*env)->ExceptionCheck(env)) {
+            (*env)->ExceptionClear(env);
+        }
+        return 0;
+    }
+
+    get_launcher = (*env)->GetStaticMethodID(env, launcher_base_class,
+            "getLauncher",
+            "()Lnet/fabricmc/loader/impl/launch/FabricLauncher;");
+    launcher = get_launcher == NULL ? NULL
+            : (*env)->CallStaticObjectMethod(
+                    env, launcher_base_class, get_launcher);
+    if (launcher == NULL || (*env)->ExceptionCheck(env)) {
+        vape_log_pending_exception(env, L"FabricLauncherBase.getLauncher");
+        return -1;
+    }
+
+    launcher_class = (*env)->GetObjectClass(env, launcher);
+    get_target_loader = launcher_class == NULL ? NULL : (*env)->GetMethodID(
+            env, launcher_class, "getTargetClassLoader",
+            "()Ljava/lang/ClassLoader;");
+    add_to_class_path = launcher_class == NULL ? NULL : (*env)->GetMethodID(
+            env, launcher_class, "addToClassPath",
+            "(Ljava/nio/file/Path;[Ljava/lang/String;)V");
+    if (get_target_loader == NULL || add_to_class_path == NULL) {
+        vape_log_pending_exception(env, L"resolve FabricLauncher methods");
+        return -1;
+    }
+    target_loader = (*env)->CallObjectMethod(
+            env, launcher, get_target_loader);
+    if (target_loader == NULL || (*env)->ExceptionCheck(env)) {
+        vape_log_pending_exception(env, L"FabricLauncher.getTargetClassLoader");
+        return -1;
+    }
+
+    file_class = (*env)->GetObjectClass(env, file);
+    to_path = file_class == NULL ? NULL : (*env)->GetMethodID(
+            env, file_class, "toPath", "()Ljava/nio/file/Path;");
+    string_class = (*env)->FindClass(env, "java/lang/String");
+    path = to_path == NULL ? NULL
+            : (*env)->CallObjectMethod(env, file, to_path);
+    allowed_prefixes = string_class == NULL ? NULL
+            : (*env)->NewObjectArray(env, 0, string_class, NULL);
+    if (path == NULL || allowed_prefixes == NULL
+            || (*env)->ExceptionCheck(env)) {
+        vape_log_pending_exception(env, L"create Fabric payload path");
+        return -1;
+    }
+    (*env)->CallVoidMethod(env, launcher, add_to_class_path,
+            path, allowed_prefixes);
+    if ((*env)->ExceptionCheck(env)) {
+        vape_log_pending_exception(env, L"FabricLauncher.addToClassPath");
+        return -1;
+    }
+
+    payload_event_name = (*env)->NewStringUTF(env,
+            "gg.vape.event.impl.EventRenderWorldPassExecutorDrain");
+    payload_event_class = payload_event_name == NULL ? NULL
+            : (jclass)(*env)->CallObjectMethod(
+                    env, target_loader, load_class, payload_event_name);
+    class_class = (*env)->FindClass(env, "java/lang/Class");
+    get_class_loader = class_class == NULL ? NULL : (*env)->GetMethodID(
+            env, class_class, "getClassLoader", "()Ljava/lang/ClassLoader;");
+    payload_event_loader = payload_event_class == NULL
+            || get_class_loader == NULL ? NULL
+            : (*env)->CallObjectMethod(
+                    env, payload_event_class, get_class_loader);
+    if (payload_event_loader == NULL || (*env)->ExceptionCheck(env)
+            || !(*env)->IsSameObject(
+                    env, payload_event_loader, target_loader)) {
+        if ((*env)->ExceptionCheck(env)) {
+            vape_log_pending_exception(env,
+                    L"resolve payload event from Fabric target ClassLoader");
+        } else {
+            vape_log(L"Fabric payload event used the wrong ClassLoader");
+        }
+        return -1;
+    }
+
+    retained_target_loader = (*env)->NewLocalRef(env, target_loader);
+    if (retained_target_loader == NULL) {
+        vape_log_pending_exception(env, L"retain Fabric target ClassLoader");
+        return -1;
+    }
+    (*env)->DeleteLocalRef(env, *loader);
+    *loader = retained_target_loader;
+    vape_log(L"appended product JAR to Fabric Knot ClassLoader");
+    return 1;
+}
+
 static int add_jar_to_loader(
         JNIEnv *env, jobject *loader, const wchar_t *jar_path) {
     jclass url_loader_class;
@@ -386,6 +518,7 @@ static int add_jar_to_loader(
     jclass class_loader_class;
     jmethodID get_parent;
     jobject parent_loader;
+    int fabric_result;
 
     url_loader_class = (*env)->FindClass(env, "java/net/URLClassLoader");
     url_class = (*env)->FindClass(env, "java/net/URL");
@@ -413,6 +546,12 @@ static int add_jar_to_loader(
         vape_log_pending_exception(env, L"create product JAR URL");
         return 0;
     }
+
+    fabric_result = install_fabric_payload_search(env, loader, file);
+    if (fabric_result != 0) {
+        return fabric_result > 0;
+    }
+
     if ((*env)->IsInstanceOf(env, *loader, url_loader_class)) {
         add_url = (*env)->GetMethodID(env, url_loader_class,
                 "addURL", "(Ljava/net/URL;)V");

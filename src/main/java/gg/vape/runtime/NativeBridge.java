@@ -1,7 +1,10 @@
 package gg.vape.runtime;
 
 import gg.vape.Vape;
+import gg.vape.reflect.Fabric12111Mappings;
 import gg.vape.reflect.Type;
+import gg.vape.reflect.Vanilla189Mappings;
+import gg.vape.reflect.Vanilla12111Mappings;
 import gg.vape.ui.click.GuiScreenNativeCallbackBridge;
 import gg.vape.utils.Base64Util;
 import java.lang.reflect.Field;
@@ -27,6 +30,8 @@ public class NativeBridge {
             + "{\"title\":\"ModuleSearch\",\"x\":32,\"y\":32,\"visible\":false,\"pinned\":false}"
             + "]}]}";
     private static boolean forgeAbsent = true;
+    private static volatile int vanillaMappingVersion;
+    private static volatile boolean fabric12111Runtime;
     static boolean alphaTestWasEnabled;
     private static Method glGetFloatMethod;
     private static Method glGetIntegerVectorMethod;
@@ -557,12 +562,45 @@ public class NativeBridge {
             return standaloneVersion;
         }
 
+        int vanillaVersion = NativeBridge.detectVanillaMappingVersion(
+                Thread.currentThread().getContextClassLoader(),
+                NativeBridge.class.getClassLoader());
+        if (vanillaVersion != 0) {
+            return vanillaVersion;
+        }
+
         IllegalStateException failure = new IllegalStateException(
                 "Unable to determine Minecraft version without Forge");
         if (lastFailure != null) {
             failure.initCause(lastFailure);
         }
         throw failure;
+    }
+
+    private static int detectVanillaMappingVersion(ClassLoader... preferredLoaders) {
+        int cachedVersion = vanillaMappingVersion;
+        if (cachedVersion != 0) {
+            return cachedVersion;
+        }
+        boolean vanilla189 = Vanilla189Mappings.isRuntimePresent(preferredLoaders);
+        boolean vanilla12111 = Vanilla12111Mappings.isRuntimePresent(preferredLoaders);
+        boolean fabric12111 = Fabric12111Mappings.isRuntimePresent(preferredLoaders);
+        int matchingVersions = (vanilla189 ? 1 : 0)
+                + (vanilla12111 || fabric12111 ? 1 : 0);
+        if (matchingVersions != 1) {
+            return 0;
+        }
+        fabric12111Runtime = fabric12111;
+        cachedVersion = vanilla189 ? 15 : 61;
+        vanillaMappingVersion = cachedVersion;
+        return cachedVersion;
+    }
+
+    public static boolean isFabric12111Runtime() {
+        detectVanillaMappingVersion(
+                Thread.currentThread().getContextClassLoader(),
+                NativeBridge.class.getClassLoader());
+        return fabric12111Runtime;
     }
 
     private static int parseMinecraftVersion(String text) {
@@ -812,9 +850,20 @@ public class NativeBridge {
     //GetVanillaClas
     public static Class<?> gvc(String internalName) {
         try {
+            ClassLoader contextLoader = Thread.currentThread().getContextClassLoader();
+            ClassLoader bridgeLoader = NativeBridge.class.getClassLoader();
+            int mappingVersion = detectVanillaMappingVersion(contextLoader, bridgeLoader);
+            if (mappingVersion == 15) {
+                return Vanilla189Mappings.resolveClass(internalName, contextLoader, bridgeLoader);
+            }
+            if (mappingVersion == 61) {
+                if (fabric12111Runtime) {
+                    return Fabric12111Mappings.resolveClass(internalName, contextLoader, bridgeLoader);
+                }
+                return Vanilla12111Mappings.resolveClass(internalName, contextLoader, bridgeLoader);
+            }
             return loadRuntimeClass(internalName.replace("/", "."));
-        }
-        catch (Throwable throwable) {
+        } catch (Throwable throwable) {
             return null;
         }
     }
