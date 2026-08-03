@@ -125,7 +125,7 @@ public final class OfflineAccountManager {
             if (Vape.INSTANCE.getNotificationManager() != null) {
                 Vape.INSTANCE.getNotificationManager().showInfo(
                         "Offline account",
-                        "Tên account phải dài 1-16 ký tự, chỉ gồm chữ, số hoặc _.",
+                        "Account names must be 1-16 characters and contain only letters, numbers, or underscores.",
                         5000L);
             }
             return false;

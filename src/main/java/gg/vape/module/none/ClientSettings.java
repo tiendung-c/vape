@@ -452,8 +452,10 @@ extends Mod {
                 JsonObject jsonObject;
                 JsonElement jsonElement = jsonArray.get(i);
                 if (!jsonElement.isJsonObject() || jsonElement.isJsonNull() || (jsonObject = jsonElement.getAsJsonObject()).get("title") == null || jsonObject.get("title").isJsonNull()) continue;
+                String savedTitle = jsonObject.get("title").getAsString();
                 for (Frame frame : ClientSettings.getAllFrames()) {
-                    if (!frame.getName().equals(jsonObject.get("title").getAsString())) continue;
+                    boolean legacyAccountsTitle = frame instanceof OfflineAccountsFrame && OfflineAccountsFrame.matchesSavedTitle(savedTitle);
+                    if (!frame.getName().equals(savedTitle) && !legacyAccountsTitle) continue;
                     frame.t(jsonObject);
                 }
                 continue;

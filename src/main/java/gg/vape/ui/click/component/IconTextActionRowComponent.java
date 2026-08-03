@@ -12,6 +12,12 @@ public class IconTextActionRowComponent
 extends InteractiveComponent {
     private final IconGlyphComponent icon = new IconGlyphComponent("create profile from", 6.0f, 6.0f, Color.WHITE);
     private final TruncatedTextComponent label;
+    private boolean iconVisible = true;
+
+    public IconTextActionRowComponent setIconVisible(boolean iconVisible) {
+        this.iconVisible = iconVisible;
+        return this;
+    }
 
     public void setText(String text) {
         this.label.setText(text);
@@ -32,18 +38,24 @@ extends InteractiveComponent {
         if (this.w$src$Z$e457mb()) {
             GuiRenderPrimitives.C(this.G$src$D$1b2f02a(), this.n(), this.A(), this.L(), IconTextActionRowComponent.J.z);
         }
-        double iconOffsetX = 12.0;
-        this.icon.K(this.G$src$D$1b2f02a() + iconOffsetX);
-        this.icon.S(this.n() + this.L() / 2.0 - this.icon.L() / 2.0);
-        this.icon.H();
-        this.label.K(this.icon.G$src$D$1b2f02a() + 10.0);
+        if (this.iconVisible) {
+            double iconOffsetX = 12.0;
+            this.icon.K(this.G$src$D$1b2f02a() + iconOffsetX);
+            this.icon.S(this.n() + this.L() / 2.0 - this.icon.L() / 2.0);
+            this.icon.H();
+            this.label.K(this.icon.G$src$D$1b2f02a() + 10.0);
+        } else {
+            this.label.K(this.G$src$D$1b2f02a() + 5.0);
+        }
         this.label.S(this.n() + 0.5);
-        this.label.o(this.A() - this.icon.A() - 4.0);
+        this.label.o(this.iconVisible ? this.A() - this.icon.A() - 4.0 : Math.max(0.0, this.A() - 10.0));
         this.label.Y(this.L());
-        this.label.setMaxWidth(this.A() - this.icon.A() - 4.0);
+        this.label.setMaxWidth(this.iconVisible ? this.A() - this.icon.A() - 4.0 : Math.max(0.0, this.A() - 10.0));
         this.label.H();
-        this.icon.o(6.0);
-        this.icon.Y(6.0);
+        if (this.iconVisible) {
+            this.icon.o(6.0);
+            this.icon.Y(6.0);
+        }
     }
 
     @Override
@@ -86,4 +98,3 @@ extends InteractiveComponent {
         return this.label.getFontScale();
     }
 }
-

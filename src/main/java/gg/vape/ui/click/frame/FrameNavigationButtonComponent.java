@@ -22,6 +22,7 @@ extends InteractiveComponent {
     private Frame v;
     private static final String db = "expandarrow";
     private int _T;
+    private double iconImageDivisor = 3.1;
     private DoubleAnimation Q = new DoubleAnimation(0.15, 0.0, 3.0);
     private float _V = 4.0f;
 
@@ -147,8 +148,8 @@ extends InteractiveComponent {
         ImageRenderer.drawImage(this._J, (float)this.G$src$D$1b2f02a() + (float)this.A() - 5.0f - 5.0f + this.Q.getInterpolatedValue().floatValue(), (float)d3, db, this._V, this._V, false);
         if (this._X != null) {
             smoothFontRenderer.d(this._o, this.G$src$D$1b2f02a() + 8.0 + (double)f + 5.0, (int)d2, color2);
-            int n = (int)(ImageRenderer.getImageWidth(this._X) / (double)3.1f);
-            int n2 = (int)(ImageRenderer.getImageHeight(this._X) / (double)3.1f);
+            int n = (int)(ImageRenderer.getImageWidth(this._X) / this.iconImageDivisor);
+            int n2 = (int)(ImageRenderer.getImageHeight(this._X) / this.iconImageDivisor);
             int n3 = (int)(d2 + smoothFontRenderer.d(this._o) / 2.0 - (double)((float)n2 / 2.0f));
             ImageRenderer.drawImage(color2, (int)this.G$src$D$1b2f02a() + 8, n3 += this._T, this._X, n, n2, false);
         } else {
@@ -158,6 +159,13 @@ extends InteractiveComponent {
 
     public FrameNavigationButtonComponent Q(int n) {
         this._T = n;
+        return this;
+    }
+
+    public FrameNavigationButtonComponent setIconImageDivisor(double iconImageDivisor) {
+        if (iconImageDivisor > 0.0) {
+            this.iconImageDivisor = iconImageDivisor;
+        }
         return this;
     }
 
@@ -175,4 +183,3 @@ extends InteractiveComponent {
         }
     }
 }
-

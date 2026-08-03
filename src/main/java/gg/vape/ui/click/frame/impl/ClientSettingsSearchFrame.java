@@ -192,7 +192,9 @@ extends ModuleCategoryFrame {
             this.g(new FrameNavigationButtonComponent("Macros", null, FrameMacros.class).addClickListener(new ClientSettingsSearchFrameClassOpenClickHandler(this, FrameMacros.class)));
             this.g(new FrameNavigationButtonComponent("Text GUI", "newtextgui", TextGuiSettingsFrame.class).addClickListener(new ClientSettingsSearchFrameClassOpenClickHandler(this, TextGuiSettingsFrame.class)));
             if (ForgeVersion.MC_1_8_9.L()) {
-                this.g(new FrameNavigationButtonComponent("Acoounts", "newprofiles", OfflineAccountsFrame.class).addClickListener(new ClientSettingsSearchFrameClassOpenClickHandler(this, OfflineAccountsFrame.class)));
+                this.g(new FrameNavigationButtonComponent("Accounts", "newprofiles", OfflineAccountsFrame.class)
+                        .setIconImageDivisor(4.0)
+                        .addClickListener(new ClientSettingsSearchFrameClassOpenClickHandler(this, OfflineAccountsFrame.class)));
             }
             this.g(new ColorDividerComponent(ClientSettingsSearchFrame.J.m));
             this.g(new ClickGuiQuickActionsComponent());
