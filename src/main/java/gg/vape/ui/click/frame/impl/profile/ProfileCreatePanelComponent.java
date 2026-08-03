@@ -65,7 +65,7 @@ extends GuiComponent {
         popupContent.h(new ProfileModuleSnapshotListComponent(draftProfile, 105.0, 110.0), new Object[0]);
         CenteredPopupFrame popup = ClientSettings.createPopup(this.settingsFrame.getContentLayout(), popupContent, CenteredPopupFrame.class);
         this.settingsFrame.setActivePopup(popup);
-        this.settingsFrame.i$src$Lgg_vape_ui_click_frame_FrameToolbarComponent_$gnpgc6().showBackNavigation("New Profile", false);
+        this.settingsFrame.i$src$Lgg_vape_ui_click_frame_FrameToolbarComponent_$gnpgc6().showBackNavigation("New Config", false);
     }
 
     private void openConfigFolder() {
@@ -83,7 +83,7 @@ extends GuiComponent {
         this.folderButton.w("Open config folder");
         this.folderButton.addClickListener(this::openConfigFolder);
         this.createButton.addClickListener(this::startProfileCreation);
-        this.createButton.w("Create a new profile");
+        this.createButton.w("Create a new config");
         this.addChildren(this.createButton, this.folderButton, this.divider);
     }
 

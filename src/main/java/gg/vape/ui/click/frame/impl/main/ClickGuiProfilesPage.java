@@ -61,15 +61,22 @@ implements EventListener {
     private Profile displayedActiveProfile;
     private boolean creatingProfile;
     private ClickGuiProfileHeaderComponent profileHeader;
+    private long lastConfigScanAt;
 
     private void beginCreateProfile() {
         if (this.creatingProfile) {
             return;
         }
         this.mainFrame.closeActiveOverlay();
-        Profile profile = Vape.INSTANCE.getProfilesManager().getActiveProfile();
-        profile.captureCurrentState();
-        this.previousActiveProfile = profile;
+        Profile profile = Vape.INSTANCE.getProfilesManager().getActiveProfileOrNull();
+        if (profile == null) {
+            profile = new Profile("Config", "4.21");
+            profile.captureCurrentState();
+            this.previousActiveProfile = null;
+        } else {
+            profile.captureCurrentState();
+            this.previousActiveProfile = profile;
+        }
         this.draftProfile = new Profile(profile.getName(), "4.21");
         this.draftProfile.loadJson(profile.toJson(true));
         this.draftProfile.setLocalId(UUID.randomUUID());
@@ -87,7 +94,10 @@ implements EventListener {
         }
         Profile profile = Vape.INSTANCE.getProfilesManager().getActiveProfile();
         if (profile != null && profile.isDraft()) {
-            Vape.INSTANCE.getProfilesManager().setActiveProfile(this.previousActiveProfile != null ? this.previousActiveProfile : this.displayedActiveProfile);
+            Profile restoreProfile = this.previousActiveProfile != null ? this.previousActiveProfile : this.displayedActiveProfile;
+            if (restoreProfile != null) {
+                Vape.INSTANCE.getProfilesManager().setActiveProfile(restoreProfile);
+            }
         }
         this.draftProfile = null;
         this.previousActiveProfile = null;
@@ -174,7 +184,7 @@ implements EventListener {
         GuiComponent guiComponent = this.getSidebarHeader().f().get(0);
         this.getSidebarHeader().removeMarkedChildren();
         this.getSidebarHeader().h(guiComponent, "widthwrap");
-        this.newProfileButton = new TextButton("NEW PROFILE", 0.625, J.z(), J.z().brighter(), null, 2.0f, 1.0f, 53.0, 16.0);
+        this.newProfileButton = new TextButton("NEW CONFIG", 0.625, J.z(), J.z().brighter(), null, 2.0f, 1.0f, 53.0, 16.0);
         this.newProfileButton.setIconResource("newadd");
         this.newProfileButton.setIconSize(6.0f);
         this.newProfileButton.setUseAlternateFont(true);
@@ -199,7 +209,7 @@ implements EventListener {
         this.profileList.E(true);
         this.profileList.h(new SpacerComponent(0.0, 1.0), new Object[0]);
         this.getSidebarContent().h(this.profileList, new Object[0]);
-        object = Vape.INSTANCE.getProfilesManager().getActiveProfile();
+        object = Vape.INSTANCE.getProfilesManager().getActiveProfileOrNull();
         for (Profile profile : Vape.INSTANCE.getProfilesManager().getProfiles()) {
             ClickGuiProfileCardComponent clickGuiProfileCardComponent = new ClickGuiProfileCardComponent(profile);
             clickGuiProfileCardComponent.o(this.profileList.A());
@@ -241,7 +251,7 @@ implements EventListener {
     @EventHandler
     public void onProfileListMutation(ProfileListMutationEvent profileListMutationEvent) {
         this.refreshProfileList();
-        Profile profile = Vape.INSTANCE.getProfilesManager().getActiveProfile();
+        Profile profile = Vape.INSTANCE.getProfilesManager().getActiveProfileOrNull();
         if (!this.creatingProfile && this.displayedActiveProfile != profile) {
             this.renderMainContent();
         }
@@ -343,7 +353,7 @@ implements EventListener {
         }
         String string = this.createNameInput.getText();
         if (string == null || string.trim().isEmpty()) {
-            this.draftProfileCard.setDisplayName("New Profile");
+            this.draftProfileCard.setDisplayName("New Config");
         } else {
             this.draftProfileCard.setDisplayName(string);
         }
@@ -356,6 +366,14 @@ implements EventListener {
 
     @Override
     public void u() {
+        long now = System.currentTimeMillis();
+        if (!this.creatingProfile && now - this.lastConfigScanAt >= 750L) {
+            this.lastConfigScanAt = now;
+            if (Vape.INSTANCE.getProfilesManager().refreshFromDisk()) {
+                this.refreshProfileList();
+                this.renderMainContent();
+            }
+        }
         this.cardSelectionAnimation.u(this.cardSelectionActive);
         if (this.mainPanel != null) {
             this.mainPanel.setDisabledOverlayColor(this.applyCardSelectionState(ClickGuiProfilesPage.J.m));
@@ -364,10 +382,10 @@ implements EventListener {
             this.updateDraftCardName();
         }
         if (this.profileList != null) {
-            Profile profile = Vape.INSTANCE.getProfilesManager().getActiveProfile();
+            Profile profile = Vape.INSTANCE.getProfilesManager().getActiveProfileOrNull();
             if (this.displayedActiveProfile != profile && !this.creatingProfile) {
                 this.displayedActiveProfile = profile;
-                if (this.profileHeader != null) {
+                if (this.profileHeader != null && profile != null) {
                     this.profileHeader.updateProfile(profile);
                 }
                 if (this.snapshotList != null) {
@@ -391,12 +409,16 @@ implements EventListener {
         }
         EventBus.getInstance().unregisterListener(this);
         EventBus.getInstance().registerListener(this, new Predicate[0]);
+        this.lastConfigScanAt = System.currentTimeMillis();
+        if (Vape.INSTANCE.getProfilesManager().refreshFromDisk()) {
+            this.renderMainContent();
+        }
         this.refreshProfileList();
     }
 
     private void renderMainContent() {
         this.getMainContent().removeMarkedChildren();
-        Profile profile = Vape.INSTANCE.getProfilesManager().getActiveProfile();
+        Profile profile = Vape.INSTANCE.getProfilesManager().getActiveProfileOrNull();
         if (!this.creatingProfile) {
             this.displayedActiveProfile = profile;
         }
@@ -408,14 +430,14 @@ implements EventListener {
         double d2 = this.mainPanel.A() - d * 2.0;
         if (this.creatingProfile) {
             this.renderCreateProfile(profile, d, d2);
-        } else {
+        } else if (profile != null) {
             this.renderExistingProfile(profile, d, d2);
         }
         this.getMainContent().h(this.mainPanel, new Object[0]);
     }
 
     public ClickGuiProfilesPage(ClickGuiMainFrame clickGuiMainFrame, double d, double d2, double d3) {
-        super(d, d2, d3, 2.0, "Profiles");
+        super(d, d2, d3, 2.0, "Config");
         this.mainFrame = clickGuiMainFrame;
         this.getClass();
         this.cardSelectionAnimation = new DoubleAnimation(0.15, 0.0, 1.0);
@@ -424,6 +446,7 @@ implements EventListener {
         this.overlayCloseCallback = this::clearCardSelection;
         this.mainFrame.addContentOverlayCallback(this.overlayCloseCallback);
         EventBus.getInstance().registerListener(this, new Predicate[0]);
+        Vape.INSTANCE.getProfilesManager().refreshFromDisk();
         this.renderSidebar();
         this.renderMainContent();
     }
@@ -438,7 +461,7 @@ implements EventListener {
         }
         this.profileList.removeMarkedChildren();
         this.profileList.h(new SpacerComponent(0.0, 1.0), new Object[0]);
-        Profile profile = Vape.INSTANCE.getProfilesManager().getActiveProfile();
+        Profile profile = Vape.INSTANCE.getProfilesManager().getActiveProfileOrNull();
         if (this.creatingProfile && this.draftProfile != null) {
             this.draftProfileCard = new ClickGuiProfileCardComponent(this.draftProfile);
             this.draftProfileCard.o(this.profileList.A());
@@ -446,7 +469,7 @@ implements EventListener {
             this.draftProfileCard.setActive(false);
             this.draftProfileCard.setBadgeVisible(false);
             this.draftProfileCard.setSelected(true);
-            this.draftProfileCard.setDisplayName("New Profile");
+            this.draftProfileCard.setDisplayName("New Config");
             this.profileList.h(new PaddedComponent(0.0, 3.0, 0.0, 0.0, this.draftProfileCard), new Object[0]);
         } else {
             this.draftProfileCard = null;

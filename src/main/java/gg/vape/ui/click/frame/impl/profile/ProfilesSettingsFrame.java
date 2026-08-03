@@ -31,6 +31,7 @@ extends SettingsSubpageFrame {
     private final FlowLayoutComponent contentLayout;
     private BooleanToggleComponent autoEnableModulesToggle;
     private final IconButtonComponent editHiddenProfilesButton = new IconButtonComponent("newedit", 0.7);
+    private long lastConfigScanAt;
 
     public void closePopupAndDiscardDraft() {
         if (this.activePopup != null) {
@@ -111,6 +112,13 @@ extends SettingsSubpageFrame {
 
     @Override
     public void c() {
+        long now = System.currentTimeMillis();
+        if (now - this.lastConfigScanAt >= 750L) {
+            this.lastConfigScanAt = now;
+            if (Vape.INSTANCE.getProfilesManager().refreshFromDisk()) {
+                refreshProfileList();
+            }
+        }
         int hiddenProfileCount = 0;
         for (Profile profile : Vape.INSTANCE.getProfilesManager().getProfiles()) {
             if (!profile.isVisible()) {
@@ -189,7 +197,7 @@ extends SettingsSubpageFrame {
     }
 
     public ProfilesSettingsFrame() {
-        super("newprofiles", "Profiles");
+        super("newprofiles", "Config");
         this.doneButton = new TextLabel("Done", 0.8);
         this.setVisible(false);
         this.o(103.0);
@@ -248,7 +256,7 @@ extends SettingsSubpageFrame {
 
     @Override
     public String getName() {
-        return "Profiles";
+        return "Config";
     }
 
     public TextLabel getDoneButton() {

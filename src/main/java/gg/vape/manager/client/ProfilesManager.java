@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.nio.charset.StandardCharsets;
 import org.jetbrains.annotations.Nullable;
 
 public class ProfilesManager {
@@ -197,6 +198,72 @@ public class ProfilesManager {
         this.profiles.clear();
     }
 
+    /**
+     * Synchronizes the in-memory config list with standalone JSON files.
+     * The filesystem is authoritative: deleted files are removed from the
+     * menu, while newly copied valid files are loaded without a restart.
+     */
+    public boolean refreshFromDisk() {
+        JsonObject diskProfiles = VapeStorage.loadProfiles();
+        Set<UUID> diskIds = new LinkedHashSet<UUID>();
+        List<JsonObject> newConfigs = new ArrayList<JsonObject>();
+        for (Map.Entry<String, JsonElement> entry : diskProfiles.entrySet()) {
+            JsonElement element = entry.getValue();
+            if (element == null || !element.isJsonObject()) {
+                continue;
+            }
+            JsonObject config = element.getAsJsonObject();
+            String uuid = config.has("uuid") && config.get("uuid").isJsonPrimitive()
+                    ? config.get("uuid").getAsString() : null;
+            UUID localId;
+            try {
+                localId = uuid == null ? null : UUID.fromString(uuid);
+            }
+            catch (IllegalArgumentException ignored) {
+                localId = null;
+            }
+            if (localId == null) {
+                localId = UUID.nameUUIDFromBytes(
+                        ("ImportedConfig:" + entry.getKey()).getBytes(StandardCharsets.UTF_8));
+                config.addProperty("uuid", localId.toString());
+            }
+            diskIds.add(localId);
+            newConfigs.add(config);
+        }
+
+        boolean changed = false;
+        for (Profile profile : new ArrayList<Profile>(this.profiles)) {
+            if (profile.isDraft() || diskIds.contains(profile.getLocalId())) {
+                continue;
+            }
+            if (this.activeProfile == profile) {
+                this.activeProfile = null;
+            }
+            this.profiles.remove(profile);
+            changed = true;
+        }
+
+        for (JsonObject config : newConfigs) {
+            String uuid = config.get("uuid").getAsString();
+            UUID localId = UUID.fromString(uuid);
+            if (this.getProfileByLocalId(localId) != null) {
+                continue;
+            }
+            Profile profile = new Profile("", "", true).loadJson(config);
+            profile.setDraft(false);
+            this.profiles.add(profile);
+            changed = true;
+        }
+
+        if (changed) {
+            this.profiles.sort(ProfilesManager::compareProfileSortOrder);
+            if (this.activeProfile == null && !this.profiles.isEmpty()) {
+                this.setActiveProfile(this.profiles.get(0));
+            }
+        }
+        return changed;
+    }
+
     public void addProfile(Profile profile) {
         this.addProfile(profile, false);
     }
@@ -214,8 +281,8 @@ public class ProfilesManager {
     }
 
     public void switchProfile(Profile profile) {
-        if (this.getActiveProfile() != null) {
-            this.getActiveProfile().captureCurrentState();
+        if (this.activeProfile != null) {
+            this.activeProfile.captureCurrentState();
         }
         this.setActiveProfile(profile);
     }

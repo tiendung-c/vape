@@ -2,13 +2,13 @@ package gg.vape.ui.click.frame.impl.main;
 
 public enum ClickGuiSection {
     MODULES("Modules"),
-    PROFILES("Profiles");
+    PROFILES("Config");
 
     private static final /* synthetic */ ClickGuiSection[] R;
     private final String a;
 
     static {
-        String[] stringArray = new String[]{"PROFILES", "Profiles", "Modules", "MODULES"};
+        String[] stringArray = new String[]{"CONFIG", "Config", "Modules", "MODULES"};
 
 
 

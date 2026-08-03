@@ -400,7 +400,7 @@ extends InteractiveComponent {
         panelComponent.l$src$V$1mibm4x();
         CenteredPopupFrame centeredPopupFrame = ClientSettings.createPopup(this.profilesFrame.getContentLayout(), panelComponent, CenteredPopupFrame.class);
         this.profilesFrame.setActivePopup(centeredPopupFrame);
-        this.profilesFrame.i$src$Lgg_vape_ui_click_frame_FrameToolbarComponent_$gnpgc6().showBackNavigation("Profiles", false);
+        this.profilesFrame.i$src$Lgg_vape_ui_click_frame_FrameToolbarComponent_$gnpgc6().showBackNavigation("Config", false);
     }
 
     public void setStatusText(String text) {

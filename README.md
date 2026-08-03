@@ -157,6 +157,8 @@ Thư mục cấu hình mặc định là:
 
 - `settings.json` lưu settings chung của client, ví dụ profile đang chọn và tùy chọn giao diện.
 - Mỗi profile là một file JSON riêng, chứa trạng thái module/HUD/legit và các giá trị setting của profile đó.
+- Trên Click GUI, mục `Profiles` được hiển thị là `Config`; danh sách được đồng bộ trực tiếp với các file JSON trong thư mục `%APPDATA%\Vape`.
+- Khi xóa file config khỏi thư mục, card config tương ứng sẽ biến mất khỏi menu; khi đặt thêm file JSON hợp lệ, tên trong trường `name` sẽ tự xuất hiện sau lần quét kế tiếp.
 - Khi tạo profile, profile được lưu ngay vào file riêng.
 - Khi xóa profile, file JSON của profile bị xóa cùng profile.
 - Khi đặt thêm một file JSON hợp lệ vào thư mục, `ProfilesManager` có thể load profile đó ở lần refresh/load tiếp theo.
