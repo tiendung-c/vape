@@ -48,6 +48,7 @@ import gg.vape.module.combat.velocity.VelocityPacketMode;
 import gg.vape.module.combat.velocity.VelocityPacketReceiveMode;
 import gg.vape.module.combat.HitSelect;
 import gg.vape.module.combat.silentaura.SilentAuraClicker;
+import gg.vape.runtime.NativeBridge;
 import gg.vape.module.render.BedPlates;
 import gg.vape.module.world.MurderFinder;
 import gg.vape.module.none.ClientSettings;
@@ -163,7 +164,10 @@ implements EventListener {
         GuiComponent[] legacyComponentsSnapshot = Category.getLegacyComponents();
         Mod[] coreModules = new Mod[61];
         coreModules[0] = new ClientSettings();
-        coreModules[1] = new LeftClicker();
+        // Keep the implementation available for internal dependencies. These
+        // legacy modules are hidden only on the modern 1.21.11 runtime,
+        // including Fabric/Knot and Forge-compatible version environments.
+        coreModules[1] = ModManager.hiddenMenuModule(new LeftClicker());
         coreModules[2] = new RightClicker();
         coreModules[3] = new Velocity();
         coreModules[4] = new VelocityPacketReceiveMode();
@@ -181,7 +185,7 @@ implements EventListener {
         coreModules[16] = new HitBoxes();
         coreModules[17] = new SpawnerFinder();
         coreModules[18] = new StorageESP();
-        coreModules[19] = new Scaffold();
+        coreModules[19] = ModManager.hiddenMenuModule(new Scaffold());
         coreModules[20] = new Fullbright();
         coreModules[21] = new WTap();
         coreModules[22] = new AutoArmor();
@@ -220,7 +224,7 @@ implements EventListener {
         coreModules[54] = new SilentAuraTargetingModule();
         coreModules[55] = new Clutch();
         coreModules[56] = new InventoryManager();
-        coreModules[57] = new BlockHit();
+        coreModules[57] = ModManager.hiddenMenuModule(new BlockHit());
         coreModules[58] = new Timer();
         coreModules[59] = new AutoClickerInputModule();
         coreModules[60] = new BedPlates();
@@ -247,6 +251,13 @@ implements EventListener {
         if (preservedLegacyComponents == null) {
             GuiComponent.setLegacyComponentState(new GuiComponent[2]);
         }
+    }
+
+    private static <T extends Mod> T hiddenMenuModule(T module) {
+        if (NativeBridge.isMinecraft12111Runtime()) {
+            module.setDefaultVisibility(false);
+        }
+        return module;
     }
 
     public boolean getState(Class<? extends Mod> clazz) {

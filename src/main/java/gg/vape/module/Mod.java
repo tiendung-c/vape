@@ -150,7 +150,7 @@ EventListener {
                     }
                 }
             }
-            if ((object = ConfigJsonUtils.getBoolean(jsonObject, "visible")) != null) {
+            if (this.defaultVisible && (object = ConfigJsonUtils.getBoolean(jsonObject, "visible")) != null) {
                 this.visible = (Boolean)object;
             }
         }

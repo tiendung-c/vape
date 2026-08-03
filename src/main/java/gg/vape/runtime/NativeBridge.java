@@ -31,6 +31,7 @@ public class NativeBridge {
             + "]}]}";
     private static boolean forgeAbsent = true;
     private static volatile int vanillaMappingVersion;
+    private static volatile int detectedMinecraftVersion;
     private static volatile boolean fabric12111Runtime;
     static boolean alphaTestWasEnabled;
     private static Method glGetFloatMethod;
@@ -601,6 +602,27 @@ public class NativeBridge {
                 Thread.currentThread().getContextClassLoader(),
                 NativeBridge.class.getClassLoader());
         return fabric12111Runtime;
+    }
+
+    /**
+     * Returns true for Minecraft 1.21.11 regardless of whether the runtime is
+     * Fabric/Knot, vanilla, or exposes Forge-compatible version classes.
+     */
+    public static boolean isMinecraft12111Runtime() {
+        int cachedVersion = detectedMinecraftVersion;
+        if (cachedVersion != 0) {
+            return cachedVersion == 61;
+        }
+        try {
+            int version = NativeBridge.gmv();
+            if (version == 15 || version == 61) {
+                detectedMinecraftVersion = version;
+            }
+            return version == 61;
+        }
+        catch (Throwable ignored) {
+            return vanillaMappingVersion == 61;
+        }
     }
 
     private static int parseMinecraftVersion(String text) {

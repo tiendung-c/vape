@@ -25,6 +25,7 @@ extends ClickerMod {
 
     @Override
     public boolean shouldSimulateBlockHit(ClickEngine clickEngine, EntityPlayerSP player) {
+        this.silentAura.onAttackIssued();
         Animations animations = Vape.INSTANCE.getModManager().getMod(Animations.class);
         return animations != null && animations.shouldBlock();
     }

@@ -24,6 +24,7 @@ import gg.vape.rotation.MouseRotationController;
 import gg.vape.rotation.RotationAngles;
 import gg.vape.rotation.RotationControlClaim;
 import gg.vape.rotation.RotationManager;
+import gg.vape.runtime.NativeBridge;
 import gg.vape.unmap.ItemLimitData;
 import gg.vape.unmap.ModeOption;
 import gg.vape.unmap.ModeSelection;
@@ -75,6 +76,8 @@ extends Mod {
     public final BooleanValue showTarget;
     private boolean perfectSwingAttackPending = false;
     private final RandomClickDelayValue attackRate;
+    private NumberValue modernHitDelay;
+    private final TimerUtil modernHitDelayTimer = new TimerUtil();
     private float yawIntegralScale = 1.0f;
     public final ModeOption threatMode;
     public final NumberValue maxAngle;
@@ -176,6 +179,9 @@ extends Mod {
 
     @Override
     public String getDetailedSuffix() {
+        if (NativeBridge.isMinecraft12111Runtime() && this.modernHitDelay != null) {
+            return this.modernHitDelay.getDisplayValue() + "ms";
+        }
         if (ForgeVersion.MC_1_12_2.d() && this.perfectSwing.getEffectiveValue().booleanValue()) {
             float attackStrength = Minecraft.thePlayer().getCooledAttackStrength(0.0f);
             if (attackStrength == 1.0f) {
@@ -225,6 +231,9 @@ extends Mod {
     }
 
     public boolean isAttackCooldownReady() {
+        if (NativeBridge.isMinecraft12111Runtime() && this.modernHitDelay != null) {
+            return this.modernHitDelayTimer.hasTimeElapsed(Math.round(this.modernHitDelay.getValue()));
+        }
         if (ForgeVersion.MC_1_12_2.d() && this.perfectSwing.getEffectiveValue().booleanValue()) {
             float attackStrength = Minecraft.thePlayer().getCooledAttackStrength(0.0f);
             return attackStrength == 1.0f;
@@ -293,6 +302,10 @@ extends Mod {
         this.zJitter = new SilentAuraAimJitter(-0.15, 0.15);
         this.perfectSwing.whenEqualTo(false).applyTo(this.attackRate);
         this.addValue(this.targetFilter, this.aimSpeed, this.attackRate, this.extraSwingDistance, this.maxAngle, this.targetMode, this.targetArea);
+        if (NativeBridge.isMinecraft12111Runtime()) {
+            this.modernHitDelay = NumberValue.createWithDescription(this, "Hit delay", "#", "ms", 0.0, 100.0, 1000.0, "Minimum delay between SilentAura attacks on Minecraft 1.21.11");
+            this.addValue(this.modernHitDelay);
+        }
         this.showTarget.addDependentValues(this.targetColor, this.attackColor, this.renderType);
         this.breakBlocks.addDependentValues(this.breakBlocksDelay, this.breakBlocksWhitelist);
         this.breakBlocksWhitelist.addDependentValues(this.blockBreakItems);
@@ -306,6 +319,18 @@ extends Mod {
 
     static {
         MODULE_ID = 267655872188715318L;
+    }
+
+    @Override
+    public void onEnable() {
+        this.modernHitDelayTimer.reset();
+        super.onEnable();
+    }
+
+    public void onAttackIssued() {
+        if (NativeBridge.isMinecraft12111Runtime() && this.modernHitDelay != null) {
+            this.modernHitDelayTimer.reset();
+        }
     }
 
     public boolean canAttack() {
