@@ -40,8 +40,8 @@ public final class SlinkyAimAssistMode extends SubModule<AimAssist> {
     private final BooleanValue aimVertically = BooleanValue.create(this, "Aim vertically", true);
     private final NumberValue horizontalMultipoint = NumberValue.create(this, "Horizontal multipoint", "#", "%", 0.0, 100.0, 100.0, 1.0);
     private final NumberValue verticalMultipoint = NumberValue.create(this, "Vertical multipoint", "#", "%", 0.0, 100.0, 100.0, 1.0);
-    private final NumberValue prediction = NumberValue.create(this, "Predict", "#", "%", 0.0, 15.0, 100.0, 1.0);
-    private final NumberValue randomization = NumberValue.create(this, "Randomization", "#", "%", 0.0, 50.0, 100.0, 1.0);
+    private final NumberValue prediction = NumberValue.create(this, "Predict", "#", "%", 0.0, 5.0, 100.0, 1.0);
+    private final NumberValue randomization = NumberValue.create(this, "Randomization", "#", "%", 0.0, 10.0, 100.0, 1.0);
     private final ModeOption singleTargetMode = new ModeOption("Single");
     private final ModeOption switchTargetMode = new ModeOption("Switch");
     private final ModeValue targetMode = ModeValue.create(this, "Target mode", (ModeSelection)this.singleTargetMode, this.singleTargetMode, this.switchTargetMode);
@@ -168,7 +168,7 @@ public final class SlinkyAimAssistMode extends SubModule<AimAssist> {
             yawStep = Math.max(-horizontal, Math.min(horizontal, yawDifference));
             pitchStep = Math.max(-vertical, Math.min(vertical, pitchDifference));
         }
-        float spread = ((Double)this.randomization.getValue()).floatValue() / 100.0f;
+        float spread = ((Double)this.randomization.getValue()).floatValue() / 100.0f * 0.25f;
         float freeAimHalfFov = (float)this.fov.getMinimumValue() * 0.5f;
         if (Math.abs(yawDifference) <= freeAimHalfFov) {
             yawStep = 0.0f;
