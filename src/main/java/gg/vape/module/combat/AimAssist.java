@@ -203,7 +203,13 @@ extends Mod {
         this.breakBlocksWhitelist.setCompactListValue(this.blockBreakItems);
         this.breakBlocksWhitelist.addDependentValues(this.blockBreakItems);
         this.checkBlockBreak.addDependentValues(this.breakBlocksWhitelist);
-        this.addValue(this.mode, this.targetFilter, this.requireMouseDown, this.strafeIncrease, this.checkBlockBreak, this.breakBlocksWhitelist, this.blockBreakItems, this.aimVertically, this.verticalSpeed, this.horizontalSpeed, this.maxAngle, this.distance, this.limitToItems, this.allowedItems, this.targetArea, this.targetMode);
+        this.addValue(this.mode, this.targetFilter, this.requireMouseDown, this.strafeIncrease, this.checkBlockBreak, this.breakBlocksWhitelist, this.blockBreakItems, this.limitToItems, this.allowedItems);
+        this.mode.addModeDependentValues(this.simpleRotation.getSelectionValue(), this.aimVertically,
+                this.verticalSpeed, this.horizontalSpeed, this.maxAngle, this.distance,
+                this.targetArea, this.targetMode);
+        this.mode.addModeDependentValues(this.adaptiveTargeting.getSelectionValue(), this.aimVertically,
+                this.verticalSpeed, this.horizontalSpeed, this.maxAngle, this.distance,
+                this.targetArea, this.targetMode);
         this.horizontalSpeed.setMaximumFractionDigits(0);
     }
 
