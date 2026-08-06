@@ -23,6 +23,7 @@ extends InteractiveComponent {
     private static final String db = "expandarrow";
     private int _T;
     private double iconImageDivisor = 3.1;
+    private boolean iconVisible = true;
     private DoubleAnimation Q = new DoubleAnimation(0.15, 0.0, 3.0);
     private float _V = 4.0f;
 
@@ -146,7 +147,7 @@ extends InteractiveComponent {
         }
         GuiRenderPrimitives.C(this.G$src$D$1b2f02a(), this.n(), this.A(), this.L(), color);
         ImageRenderer.drawImage(this._J, (float)this.G$src$D$1b2f02a() + (float)this.A() - 5.0f - 5.0f + this.Q.getInterpolatedValue().floatValue(), (float)d3, db, this._V, this._V, false);
-        if (this._X != null) {
+        if (this._X != null && this.iconVisible) {
             smoothFontRenderer.d(this._o, this.G$src$D$1b2f02a() + 8.0 + (double)f + 5.0, (int)d2, color2);
             int n = (int)(ImageRenderer.getImageWidth(this._X) / this.iconImageDivisor);
             int n2 = (int)(ImageRenderer.getImageHeight(this._X) / this.iconImageDivisor);
@@ -166,6 +167,11 @@ extends InteractiveComponent {
         if (iconImageDivisor > 0.0) {
             this.iconImageDivisor = iconImageDivisor;
         }
+        return this;
+    }
+
+    public FrameNavigationButtonComponent setIconVisible(boolean iconVisible) {
+        this.iconVisible = iconVisible;
         return this;
     }
 

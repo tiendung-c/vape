@@ -1,6 +1,10 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
+#include "loader_bootstrap.h"
+
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <windows.h>
 #include <tlhelp32.h>
 
@@ -45,6 +49,17 @@ typedef struct process_candidate {
     wchar_t title[WINDOW_TITLE_CAPACITY];
     target_kind kind;
 } process_candidate;
+
+typedef struct bootstrap_controller {
+    HANDLE mapping;
+    HANDLE ack;
+    HANDLE thread;
+    SOCKET listener;
+    volatile LONG connected;
+    volatile LONG done;
+    int winsock_started;
+    uint16_t port;
+} bootstrap_controller;
 
 typedef struct window_search_context {
     process_candidate *candidates;
@@ -350,6 +365,245 @@ static int payload_path_for_target(
     return GetFileAttributesW(output) != INVALID_FILE_ATTRIBUTES;
 }
 
+static void object_name(wchar_t *output, size_t capacity,
+        const wchar_t *kind, DWORD process_id) {
+    _snwprintf_s(output, capacity, _TRUNCATE,
+            L"Local\\Vape421.%ls.%lu", kind, process_id);
+}
+
+static int receive_line(SOCKET socket_value, char *output, size_t capacity) {
+    size_t length = 0;
+    while (length + 1 < capacity) {
+        char character;
+        int received = recv(socket_value, &character, 1, 0);
+        if (received != 1) return 0;
+        if (character == '\n') {
+            output[length] = '\0';
+            return 1;
+        }
+        if (character != '\r') {
+            output[length++] = character;
+        }
+    }
+    output[capacity - 1] = '\0';
+    return 0;
+}
+
+static int receive_exact(SOCKET socket_value, char *output, size_t length) {
+    size_t offset = 0;
+    while (offset < length) {
+        int received = recv(socket_value, output + offset,
+                (int)(length - offset), 0);
+        if (received <= 0) return 0;
+        offset += (size_t)received;
+    }
+    return 1;
+}
+
+static const wchar_t *progress_step_name(int step) {
+    switch (step) {
+        case 10: return L"JVM found";
+        case 20: return L"JVMTI initialized";
+        case 30: return L"Minecraft ClassLoader selected";
+        case 40: return L"Java payload linked";
+        case 50: return L"Java bootstrap started";
+        default: return L"progress";
+    }
+}
+
+/* Keep the native bootstrap diagnostics after the injector console closes. */
+static void append_injection_log(const char *message, size_t length) {
+    wchar_t appdata[MAX_PATH];
+    wchar_t vape_directory[MAX_PATH];
+    wchar_t logs_directory[MAX_PATH];
+    wchar_t log_path[MAX_PATH];
+    SYSTEMTIME now;
+    HANDLE file;
+    DWORD written;
+
+    if (message == NULL || length == 0
+            || GetEnvironmentVariableW(L"APPDATA", appdata, MAX_PATH) == 0) {
+        return;
+    }
+    if (_snwprintf_s(vape_directory, MAX_PATH, _TRUNCATE,
+            L"%ls\\Vape", appdata) < 0
+            || _snwprintf_s(logs_directory, MAX_PATH, _TRUNCATE,
+            L"%ls\\logs", vape_directory) < 0) {
+        return;
+    }
+    CreateDirectoryW(vape_directory, NULL);
+    CreateDirectoryW(logs_directory, NULL);
+    GetLocalTime(&now);
+    if (_snwprintf_s(log_path, MAX_PATH, _TRUNCATE,
+            L"%ls\\%04u-%02u-%02u-%02u-%02u.logs", logs_directory,
+            now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute) < 0) {
+        return;
+    }
+    file = CreateFileW(log_path, FILE_APPEND_DATA, FILE_SHARE_READ,
+            NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file == INVALID_HANDLE_VALUE) return;
+    WriteFile(file, message, (DWORD)length, &written, NULL);
+    CloseHandle(file);
+}
+
+static DWORD WINAPI serve_bootstrap_controller(LPVOID parameter) {
+    bootstrap_controller *controller = (bootstrap_controller *)parameter;
+    SOCKET client = accept(controller->listener, NULL, NULL);
+    char code[32];
+    if (client == INVALID_SOCKET) {
+        return 0;
+    }
+    InterlockedExchange(&controller->connected, 1);
+    while (receive_line(client, code, sizeof(code))) {
+        if (strcmp(code, "604") == 0) {
+            char value[32];
+            char status[32];
+            int step;
+            if (!receive_line(client, value, sizeof(value))
+                    || !receive_line(client, status, sizeof(status))) {
+                break;
+            }
+            step = atoi(value);
+            wprintf(L"[bootstrap] %ls (%d)\n", progress_step_name(step), step);
+            fflush(stdout);
+        } else if (strcmp(code, "606") == 0) {
+            char status[32];
+            receive_line(client, status, sizeof(status));
+            wprintf(L"[bootstrap] completed\n");
+            fflush(stdout);
+            break;
+        } else if (strcmp(code, "618") == 0 || strcmp(code, "610") == 0) {
+            char length_text[32];
+            size_t length;
+            size_t remaining;
+            char buffer[4096];
+            if (!receive_line(client, length_text, sizeof(length_text))) {
+                break;
+            }
+            length = (size_t)strtoul(length_text, NULL, 10);
+            remaining = length;
+            if (strcmp(code, "618") == 0) {
+                fwprintf(stderr, L"[bootstrap] failure: ");
+            }
+            while (remaining != 0) {
+                size_t chunk = remaining < sizeof(buffer) - 1
+                        ? remaining : sizeof(buffer) - 1;
+                if (!receive_exact(client, buffer, chunk)) {
+                    remaining = 0;
+                    break;
+                }
+                buffer[chunk] = '\0';
+                if (strcmp(code, "618") == 0) {
+                    fprintf(stderr, "%s", buffer);
+                } else {
+                    printf("%s", buffer);
+                }
+                append_injection_log(buffer, chunk);
+                remaining -= chunk;
+            }
+            if (strcmp(code, "618") == 0) {
+                fprintf(stderr, "\n");
+                fflush(stderr);
+                break;
+            }
+            fflush(stdout);
+        } else {
+            break;
+        }
+    }
+    closesocket(client);
+    InterlockedExchange(&controller->done, 1);
+    return 0;
+}
+
+static void cleanup_bootstrap_controller(bootstrap_controller *controller) {
+    if (controller == NULL) return;
+    if (controller->listener != INVALID_SOCKET) {
+        closesocket(controller->listener);
+        controller->listener = INVALID_SOCKET;
+    }
+    if (controller->thread != NULL) {
+        WaitForSingleObject(controller->thread, 1000);
+        CloseHandle(controller->thread);
+        controller->thread = NULL;
+    }
+    if (controller->mapping != NULL) {
+        CloseHandle(controller->mapping);
+        controller->mapping = NULL;
+    }
+    if (controller->ack != NULL) {
+        CloseHandle(controller->ack);
+        controller->ack = NULL;
+    }
+    if (controller->winsock_started) {
+        WSACleanup();
+        controller->winsock_started = 0;
+    }
+}
+
+static int setup_bootstrap_controller(
+        bootstrap_controller *controller, DWORD process_id) {
+    WSADATA winsock_data;
+    struct sockaddr_in address;
+    int address_length = sizeof(address);
+    wchar_t mapping_name[96];
+    wchar_t ack_name[96];
+    Vape421BootstrapV3 *block;
+    if (controller == NULL) return 0;
+    memset(controller, 0, sizeof(*controller));
+    controller->listener = INVALID_SOCKET;
+    if (WSAStartup(MAKEWORD(2, 2), &winsock_data) != 0) {
+        return 0;
+    }
+    controller->winsock_started = 1;
+    controller->listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    memset(&address, 0, sizeof(address));
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    address.sin_port = 0;
+    if (controller->listener == INVALID_SOCKET
+            || bind(controller->listener, (const struct sockaddr *)&address,
+                    sizeof(address)) == SOCKET_ERROR
+            || listen(controller->listener, 1) == SOCKET_ERROR
+            || getsockname(controller->listener, (struct sockaddr *)&address,
+                    &address_length) == SOCKET_ERROR) {
+        cleanup_bootstrap_controller(controller);
+        return 0;
+    }
+    controller->port = ntohs(address.sin_port);
+    object_name(mapping_name, sizeof(mapping_name) / sizeof(mapping_name[0]),
+            L"Bootstrap", process_id);
+    object_name(ack_name, sizeof(ack_name) / sizeof(ack_name[0]),
+            L"BootstrapAck", process_id);
+    controller->mapping = CreateFileMappingW(INVALID_HANDLE_VALUE, NULL,
+            PAGE_READWRITE, 0, sizeof(*block), mapping_name);
+    controller->ack = CreateEventW(NULL, TRUE, FALSE, ack_name);
+    block = controller->mapping == NULL ? NULL
+            : (Vape421BootstrapV3 *)MapViewOfFile(controller->mapping,
+                    FILE_MAP_ALL_ACCESS, 0, 0, sizeof(*block));
+    if (controller->mapping == NULL || controller->ack == NULL
+            || block == NULL) {
+        if (block != NULL) UnmapViewOfFile(block);
+        cleanup_bootstrap_controller(controller);
+        return 0;
+    }
+    SecureZeroMemory(block, sizeof(*block));
+    block->magic = VAPE421_BOOTSTRAP_MAGIC;
+    block->version = VAPE421_BOOTSTRAP_VERSION;
+    block->structure_size = (uint16_t)sizeof(*block);
+    block->target_pid = process_id;
+    block->controller_port = controller->port;
+    block->status = VAPE421_BOOTSTRAP_STATUS_CREATED;
+    UnmapViewOfFile(block);
+    controller->thread = CreateThread(NULL, 0, serve_bootstrap_controller,
+            controller, 0, NULL);
+    if (controller->thread == NULL) {
+        cleanup_bootstrap_controller(controller);
+        return 0;
+    }
+    return 1;
+}
+
 static DWORD select_process(void) {
     process_candidate candidates[MAX_CANDIDATES];
     size_t count = 0;
@@ -509,6 +763,8 @@ static int inject_library(DWORD process_id, const wchar_t *dll_path) {
     wchar_t failure_name[96];
     HANDLE result_events[2];
     DWORD bootstrap_result;
+    bootstrap_controller controller;
+    int controller_started = 0;
 
     _snwprintf_s(completion_name, sizeof(completion_name) / sizeof(completion_name[0]),
             _TRUNCATE, L"Local\\Vape421.InjectComplete.%lu", process_id);
@@ -527,6 +783,11 @@ static int inject_library(DWORD process_id, const wchar_t *dll_path) {
     }
     ResetEvent(completion_event);
     ResetEvent(failure_event);
+    controller_started = setup_bootstrap_controller(&controller, process_id);
+    if (!controller_started) {
+        fwprintf(stderr, L"Warning: bootstrap console log channel is unavailable; "
+                L"injection will continue without live logs.\n");
+    }
 
     process = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION
                     | PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ,
@@ -572,6 +833,11 @@ static int inject_library(DWORD process_id, const wchar_t *dll_path) {
         fwprintf(stderr, L"Remote LoadLibraryW did not finish within 30 seconds.\n");
         goto cleanup;
     }
+    if (controller_started
+            && WaitForSingleObject(controller.ack, 5000) != WAIT_OBJECT_0) {
+        fwprintf(stderr, L"Warning: DLL did not acknowledge bootstrap log channel; "
+                L"continuing to wait for injection status.\n");
+    }
     for (attempt = 0; attempt < 100; ++attempt) {
         if (remote_module_by_path(process_id, dll_path) != 0) {
             result = 1;
@@ -581,7 +847,7 @@ static int inject_library(DWORD process_id, const wchar_t *dll_path) {
     }
     if (result == 0) {
         fwprintf(stderr, L"LoadLibraryW returned, but the DLL is not mapped. "
-                L"Inspect vape421-native.log for bootstrap failure.\n");
+                L"Check the injector console output for bootstrap failure.\n");
         goto cleanup;
     }
 
@@ -594,11 +860,11 @@ static int inject_library(DWORD process_id, const wchar_t *dll_path) {
         result = 1;
     } else if (bootstrap_result == WAIT_OBJECT_0 + 1) {
         fwprintf(stderr, L"DLL loaded, but Java bootstrap reported failure. "
-                L"Inspect vape421-native.log.\n");
+                L"Check the injector console output.\n");
         result = 0;
     } else if (bootstrap_result == WAIT_TIMEOUT) {
         fwprintf(stderr, L"DLL was mapped, but Java bootstrap did not confirm "
-                L"within 5 minutes. Inspect vape421-native.log.\n");
+                L"within 5 minutes. Check the injector console output.\n");
         result = 0;
     } else {
         print_last_error(L"WaitForMultipleObjects");
@@ -613,6 +879,7 @@ cleanup:
         VirtualFreeEx(process, remote_path, 0, MEM_RELEASE);
     }
     if (process != NULL) CloseHandle(process);
+    if (controller_started) cleanup_bootstrap_controller(&controller);
     return result;
 }
 

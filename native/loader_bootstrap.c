@@ -187,6 +187,23 @@ void vape_loader_report_progress(int step) {
     ReleaseSRWLockExclusive(&g_controller_lock);
 }
 
+void vape_loader_report_log(const char *message) {
+    char length[32];
+    size_t message_length = message == NULL ? 0 : strlen(message);
+    AcquireSRWLockExclusive(&g_controller_lock);
+    if (g_controller_socket != INVALID_SOCKET) {
+        _snprintf_s(length, sizeof(length), _TRUNCATE, "%zu", message_length);
+        if (!send_line(g_controller_socket, "610")
+                || !send_line(g_controller_socket, length)
+                || (message_length != 0
+                        && !send_bytes(g_controller_socket, message,
+                                message_length))) {
+            close_controller_locked();
+        }
+    }
+    ReleaseSRWLockExclusive(&g_controller_lock);
+}
+
 void vape_loader_report_completed(void) {
     vape_loader_signal_injection_event(1);
     AcquireSRWLockExclusive(&g_controller_lock);

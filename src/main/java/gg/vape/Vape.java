@@ -10,6 +10,7 @@ import gg.vape.config.ConfigJsonUtils;
 import gg.vape.config.ModuleProfileMetadataCodec;
 import gg.vape.config.Profile;
 import gg.vape.config.PublicProfileSettings;
+import gg.vape.config.VapeStorage;
 import gg.vape.event.ClientListenerBootstrap;
 import gg.vape.event.EventBus;
 import gg.vape.event.EventNameFormatRewriteService;
@@ -541,7 +542,6 @@ public class Vape {
         if (ForgeVersion.MC_1_8_9.L()) {
             this.offlineAccountManager = new OfflineAccountManager();
             this.offlineAccountManager.load();
-            this.offlineAccountManager.applyActive();
         }
         EventBus.getInstance().registerListener(new AttackCooldownUtil(), new Predicate[0]);
         EventBus.getInstance().registerListener(this.modManager, new Predicate[0]);
@@ -711,11 +711,13 @@ public class Vape {
     }
 
     public static void logError(String message) {
+        VapeStorage.appendInjectionLog("ERROR " + message);
         NativeBridge.sce(message);
     }
 
     public static void debugLog(String message) {
         String normalizedMessage = message == null ? "<null>" : message;
+        VapeStorage.appendInjectionLog("DEBUG " + normalizedMessage);
         try {
             NativeBridge.sce("DEBUG " + normalizedMessage);
         }
@@ -751,6 +753,7 @@ public class Vape {
             this.isLabyModCache = null;
             this.traceStep(17);
             INSTANCE = this;
+            VapeStorage.ensureDirectories();
             this.forgeAbsent = NativeBridge.isForgeAbsent();
             this.directoryCleanupCallback = new ClientDirectoryCleanupCallback();
             GuiComponent.setLegacyComponentState(new GuiComponent[4]);
@@ -764,6 +767,7 @@ public class Vape {
         this.isLabyModCache = null;
         this.traceStep(17);
         INSTANCE = this;
+        VapeStorage.ensureDirectories();
         this.forgeAbsent = NativeBridge.isForgeAbsent();
         this.directoryCleanupCallback = new ClientDirectoryCleanupCallback();
     }

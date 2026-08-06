@@ -298,8 +298,7 @@ implements Comparable<Profile> {
         if (!gg.vape.module.none.ClientSettings.framesInitialized
                 || this.data == null
                 || this.data.get("frames") == null
-                || this.data.get("frames").isJsonNull()
-                || !Vape.INSTANCE.getPublicProfileSettings().framePositionsPerProfile.getEffectiveValue().booleanValue()) {
+                || this.data.get("frames").isJsonNull()) {
             return;
         }
         JsonArray frameStates = this.data.get("frames").getAsJsonArray();

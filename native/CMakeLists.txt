@@ -70,6 +70,7 @@ target_compile_definitions(Vape421Injector PRIVATE
         WIN32_LEAN_AND_MEAN
         _CRT_SECURE_NO_WARNINGS)
 target_compile_options(Vape421Injector PRIVATE /W4)
+target_link_libraries(Vape421Injector PRIVATE ws2_32)
 
 include(CTest)
 if(BUILD_TESTING)

@@ -43,6 +43,8 @@ import gg.vape.rotation.RotationManager;
 import gg.vape.ui.click.frame.impl.hud.ActiveModuleStackFrame;
 import gg.vape.ui.theme.ThemeColors;
 import gg.vape.unmap.ItemLimitData;
+import gg.vape.unmap.ModeOption;
+import gg.vape.unmap.ModeSelection;
 import gg.vape.utils.BlockUtil;
 import gg.vape.utils.MathUtil;
 import gg.vape.utils.PlayerSimulationUtil;
@@ -54,6 +56,7 @@ import gg.vape.utils.datas.BlockCoordinate;
 import gg.vape.utils.datas.BlockData;
 import gg.vape.value.BooleanValue;
 import gg.vape.value.LimitValue;
+import gg.vape.value.ModeValue;
 import gg.vape.value.NumberValue;
 import gg.vape.value.RandomValue;
 import gg.vape.wrapper.impl.AxisAlignedBB;
@@ -165,6 +168,15 @@ extends Mod {
     private int previousSlot = -1;
     private final BooleanValue onMoreThanXBlocks;
     private final BooleanValue allowStaircaseUp;
+    private final NumberValue minimumFallDistance;
+    private final BooleanValue autoClutch;
+    private final ModeOption voidFallMode = new ModeOption("Void");
+    private final ModeOption anyFallMode = new ModeOption("Any fall");
+    private final ModeValue autoClutchFallMode;
+    private boolean autoClutchChecking;
+    private boolean autoClutchActive;
+    private boolean brakingAfterClutch;
+    private static final double SAFE_STOP_SPEED = 0.025;
 
     private void resetPendingFail() {
         this.pendingFailMessage = null;
@@ -330,6 +342,10 @@ extends Mod {
         if (Minecraft.currentScreen().getObject() == null) {
             KeyboardCodeUtil.disableLegacyRepeatEvents();
         }
+        if (this.clutchPath != null || this.brakingAfterClutch) {
+            this.stopPlayerMovement();
+            return;
+        }
         if (this.pendingInputForward != null) {
             MovementInputHelper.synchronizeDirectionalInput(this.pendingInputForward, this.pendingInputBack, this.pendingInputLeft, this.pendingInputRight);
         } else {
@@ -357,6 +373,9 @@ extends Mod {
 
     public BlockIn() {
         super("Clutch", -65404, Category.UTILITY, "Saves yourself from falling");
+        this.autoClutch = BooleanValue.create(this, "Auto clutch", false, "Activates after knockback when a long fall is predicted");
+        this.autoClutchFallMode = ModeValue.create((Object)this, "Auto clutch mode", "Void - Only clutches when falling into the void\nAny fall - Clutches on every sufficiently long fall", (ModeSelection)this.voidFallMode, this.voidFallMode, this.anyFallMode);
+        this.minimumFallDistance = NumberValue.create(this, "Minimum fall distance", "#", "blocks", 3.0, 10.0, 20.0, 1.0, "Minimum predicted fall distance before Auto clutch activates");
         this.onLethalFall = BooleanValue.create(this, "On lethal fall", true, "Catches the player if they are about to die due to fall damage");
         this.onMoreThanXBlocks = BooleanValue.create(this, "On more than x blocks", false, "Catches the player if their landing block is more than x amount of blocks");
         this.blocksThreshold = NumberValue.create((Object)this, "Blocks", "#", "", 3.0, 6.0, 10.0, 1.0);
@@ -394,7 +413,8 @@ extends Mod {
         this.limitBlocks.addDependentValues(this.maxBlocks);
         this.silentAim.getDisabledCondition().applyTo(this.resetAngle);
         this.resetAngle.setOverrideColor(ThemeColors.J.r);
-        this.addValue(this.onVoid, this.onLethalFall, this.onMoreThanXBlocks, this.blocksThreshold, this.speed, this.silentAim, this.resetAngle, this.resetAngleDelay, this.returnToLastSlot, this.returnDelay, this.clutchMoveDelay, this.failDelay, this.allowStaircaseUp, this.showBlockCount, this.limitBlocks, this.maxBlocks, this.blacklist, this.blacklistBlocks, this.heldWhitelist, this.whitelistBlocks);
+        this.autoClutch.addDependentValues(this.autoClutchFallMode, this.minimumFallDistance);
+        this.addValue(this.autoClutch, this.autoClutchFallMode, this.minimumFallDistance, this.onVoid, this.onLethalFall, this.onMoreThanXBlocks, this.blocksThreshold, this.speed, this.silentAim, this.resetAngle, this.resetAngleDelay, this.returnToLastSlot, this.returnDelay, this.clutchMoveDelay, this.failDelay, this.allowStaircaseUp, this.showBlockCount, this.limitBlocks, this.maxBlocks, this.blacklist, this.blacklistBlocks, this.heldWhitelist, this.whitelistBlocks);
         this.rotationClaim.setPriority(this, 50);
     }
 
@@ -404,6 +424,14 @@ extends Mod {
         WorldClient world = eventPostTick.getWorld();
         if (localPlayer.isNull() || world.isNull()) {
             this.resetState();
+            return;
+        }
+        if (this.brakingAfterClutch) {
+            this.stopPlayerMovement();
+            if (localPlayer.b$src$Z$fqlxe4() && this.horizontalSpeed(localPlayer) <= SAFE_STOP_SPEED) {
+                this.brakingAfterClutch = false;
+                this.finishResetState();
+            }
             return;
         }
         boolean onGround = localPlayer.b$src$Z$fqlxe4();
@@ -474,7 +502,45 @@ extends Mod {
 
     @Override
     public void onDisable() {
+        this.autoClutchChecking = false;
+        this.autoClutchActive = false;
+        this.brakingAfterClutch = false;
+        this.finishResetState();
         ClientSettings.getFrame(ActiveModuleStackFrame.class).removeModule(this);
+    }
+
+    @Override
+    public void onEnable() {
+        this.autoClutchChecking = false;
+        this.autoClutchActive = false;
+        ClientSettings.getFrame(ActiveModuleStackFrame.class).addModule(this);
+    }
+
+    private void updateRavenActivation(EntityPlayerSP player) {
+        if (!this.autoClutch.getEffectiveValue().booleanValue()) {
+            this.autoClutchChecking = false;
+            this.autoClutchActive = false;
+            return;
+        }
+        if (player.b$src$Z$fqlxe4()) {
+            this.autoClutchChecking = false;
+            this.autoClutchActive = false;
+            return;
+        }
+        BlockCoordinate landingBlock = this.findLandingBlockSimple(60, player);
+        boolean falling = player.q() < 0.0;
+        boolean anyFall = this.autoClutchFallMode.getValue() == this.anyFallMode;
+        if (falling && (anyFall || landingBlock == null)) {
+            this.autoClutchChecking = true;
+        }
+        if (this.autoClutchChecking && !this.autoClutchActive) {
+            double predictedFall = landingBlock == null
+                    ? Double.MAX_VALUE
+                    : player.N() - (double)landingBlock.E();
+            if (predictedFall >= (Double)this.minimumFallDistance.getValue()) {
+                this.autoClutchActive = true;
+            }
+        }
     }
 
     public int scorePlacementPath(ArrayList<Vec3d> candidatePositions, World world, Vector<PlacementTarget> path) {
@@ -1313,11 +1379,6 @@ extends Mod {
         return firstPath.hasFailed() ? firstPath : null;
     }
 
-    @Override
-    public void onEnable() {
-        ClientSettings.getFrame(ActiveModuleStackFrame.class).addModule(this);
-    }
-
     private void resetClutch(EntityPlayerSP localPlayer) {
         this.clutchPath = null;
         this.placeTarget = null;
@@ -1388,6 +1449,18 @@ extends Mod {
     }
 
     private void resetState() {
+        EntityPlayerSP player = Minecraft.thePlayer();
+        if (this.clutchPath != null && player.isNotNull() && player.b$src$Z$fqlxe4()
+                && this.horizontalSpeed(player) > SAFE_STOP_SPEED) {
+            this.brakingAfterClutch = true;
+            this.stopPlayerMovement();
+            return;
+        }
+        this.finishResetState();
+    }
+
+    private void finishResetState() {
+        this.brakingAfterClutch = false;
         if (this.pendingInputApply) {
             this.clearPendingInputs();
             if (Minecraft.currentScreen().isNull()) {
@@ -1439,6 +1512,19 @@ extends Mod {
         this.forcingCounterMotion = false;
         this.counterMotion = false;
         this.movementLock.unlock();
+    }
+
+    private void stopPlayerMovement() {
+        this.inputForward = false;
+        this.inputBack = false;
+        this.inputLeft = false;
+        this.inputRight = false;
+        this.clearPendingInputs();
+        MovementInputHelper.releaseInput(true);
+    }
+
+    private double horizontalSpeed(EntityPlayerSP player) {
+        return Math.sqrt(player.t() * player.t() + player.T() * player.T());
     }
 
     private BlockPlacementPathSegment computeClutchPath(World world, EntityPlayerSP localPlayer, ItemStack itemStack) {
@@ -1588,12 +1674,14 @@ extends Mod {
             this.resetState();
             return;
         }
-        if (!(this.onVoid.getEffectiveValue().booleanValue() || this.onLethalFall.getEffectiveValue().booleanValue() || this.onMoreThanXBlocks.getEffectiveValue().booleanValue())) {
+        this.updateRavenActivation(localPlayer);
+        boolean ravenActivationActive = this.autoClutchActive;
+        if (!ravenActivationActive && this.clutchPath == null) {
             this.resetState();
             return;
         }
         boolean jumpPressed = gg.vape.config.ClientSettings.isPhysicalKeyDown(eventPreTick.getGameSettings().O());
-        if (jumpPressed) {
+        if (jumpPressed && !ravenActivationActive) {
             if (this.clutchPath != null) {
                 if (localPlayer.b$src$Z$fqlxe4()) {
                     BlockPathPlanner landingSimulation = new BlockPathPlanner(localPlayer, localPlayer, world, this.graph);
@@ -1806,24 +1894,9 @@ extends Mod {
                 }
             }
         }
-        if (this.isPlayerMoving() && this.clutchPath == null) {
-            boolean fallingOrRising = !localPlayer.b$src$Z$fqlxe4() || localPlayer.q() >= 0.0;
-            if (fallingOrRising && !localPlayer.S$src$Z$151gttj() && !localPlayer.f$src$Z$fst3rk() && !localPlayer.h$src$Z$ftwoya() && this.failTimer.hasTimeElapsed(((Double)this.failDelay.getValue()).longValue())) {
-                BlockCoordinate landingBlock = this.findLandingBlockSimple(50, localPlayer);
-                boolean fallingIntoVoid = false;
-                boolean lethalFall = false;
-                boolean exceedsBlockThreshold = false;
-                if (landingBlock != null) {
-                    if (this.onLethalFall.getEffectiveValue().booleanValue() && localPlayer.N() - (double)landingBlock.E() - 3.0 > (double)localPlayer.w$src$F$15l9epb()) {
-                        lethalFall = true;
-                    }
-                    if (this.onMoreThanXBlocks.getEffectiveValue().booleanValue() && localPlayer.N() - (double)(landingBlock.E() + 1) >= (Double)this.blocksThreshold.getValue()) {
-                        exceedsBlockThreshold = true;
-                    }
-                } else {
-                    fallingIntoVoid = this.onVoid.getEffectiveValue();
-                }
-                if (fallingIntoVoid || lethalFall || exceedsBlockThreshold) {
+        if (ravenActivationActive && this.clutchPath == null) {
+            boolean falling = !localPlayer.b$src$Z$fqlxe4() && localPlayer.q() < 0.0;
+            if (falling && !localPlayer.S$src$Z$151gttj() && !localPlayer.f$src$Z$fst3rk() && !localPlayer.h$src$Z$ftwoya() && this.failTimer.hasTimeElapsed(((Double)this.failDelay.getValue()).longValue())) {
                     if (!this.rotationClaim.isOwnedBy(this) && !this.rotationClaim.acquire(this, this.silentAim.getEffectiveValue())) {
                         return;
                     }
@@ -1868,7 +1941,6 @@ extends Mod {
                         this.clutchPath = null;
                         this.failTimer.reset();
                     }
-                }
             }
         }
         this.tickFailDelay();
@@ -2104,6 +2176,7 @@ extends Mod {
                     appliesToPlayer = Math.abs(motionX) >= 0.005 || Math.abs(motionY) >= 0.005 || Math.abs(motionZ) >= 0.005;
                 }
                 if (appliesToPlayer) {
+                    this.autoClutchChecking = this.autoClutch.getEffectiveValue().booleanValue();
                     this.resetClutch(localPlayer);
                 }
             } else if (packet.isInstance(MappedClasses.zw)) {
