@@ -59,6 +59,13 @@ public final class SlinkyAimAssistMode extends SubModule<AimAssist> {
     private final Random random = new Random();
     @Nullable
     private EntityLivingBase lockedTarget;
+    @Nullable
+    private EntityLivingBase rotationTarget;
+    private float smoothedYawStep;
+    private float smoothedPitchStep;
+    private boolean rotationSmoothingInitialized;
+    private float lockedHorizontalSpeed;
+    private float lockedVerticalSpeed;
     private float lastViewYaw;
     private float lastViewPitch;
     private boolean viewInitialized;
@@ -145,6 +152,12 @@ public final class SlinkyAimAssistMode extends SubModule<AimAssist> {
     }
 
     private void applyRotation(EntityPlayerSP player, EntityLivingBase target) {
+        if (target != this.rotationTarget) {
+            this.rotationTarget = target;
+            this.rotationSmoothingInitialized = false;
+            this.lockedHorizontalSpeed = (float)this.horizontalSpeed.getRandomValue();
+            this.lockedVerticalSpeed = (float)this.verticalSpeed.getRandomValue();
+        }
         double[] point = this.resolveAimPoint(player, target);
         double dx = point[0] - player.c();
         double dz = point[2] - player.Z();
@@ -159,14 +172,21 @@ public final class SlinkyAimAssistMode extends SubModule<AimAssist> {
             yawStep = yawDifference;
             pitchStep = pitchDifference;
         } else {
-            float horizontal = (float)this.horizontalSpeed.getRandomValue();
-            float vertical = (float)this.verticalSpeed.getRandomValue();
+            float horizontal = this.lockedHorizontalSpeed;
+            float vertical = this.lockedVerticalSpeed;
             if (this.rotationMode.getValue() == this.regularRotation) {
                 horizontal *= Math.max(0.15f, Math.min(1.0f, Math.abs(yawDifference) / 45.0f));
                 vertical *= Math.max(0.15f, Math.min(1.0f, Math.abs(pitchDifference) / 30.0f));
             }
             yawStep = Math.max(-horizontal, Math.min(horizontal, yawDifference));
             pitchStep = Math.max(-vertical, Math.min(vertical, pitchDifference));
+            if (this.rotationSmoothingInitialized) {
+                yawStep = this.smoothedYawStep * 0.65f + yawStep * 0.35f;
+                pitchStep = this.smoothedPitchStep * 0.65f + pitchStep * 0.35f;
+            }
+            this.smoothedYawStep = yawStep;
+            this.smoothedPitchStep = pitchStep;
+            this.rotationSmoothingInitialized = true;
         }
         float spread = ((Double)this.randomization.getValue()).floatValue() / 100.0f * 0.25f;
         float freeAimHalfFov = (float)this.fov.getMinimumValue() * 0.5f;
@@ -187,6 +207,8 @@ public final class SlinkyAimAssistMode extends SubModule<AimAssist> {
                 || this.requireSprint.getEffectiveValue() && !Minecraft.gameSettings().r().isKeyDown()
                 || this.requireMouseMoved.getEffectiveValue() && !moved) {
             this.lockedTarget = null;
+            this.rotationTarget = null;
+            this.rotationSmoothingInitialized = false;
             return;
         }
         this.lockedTarget = this.selectTarget();
@@ -196,6 +218,8 @@ public final class SlinkyAimAssistMode extends SubModule<AimAssist> {
     @Override
     public void onDisable() {
         this.lockedTarget = null;
+        this.rotationTarget = null;
+        this.rotationSmoothingInitialized = false;
         this.viewInitialized = false;
     }
 }
