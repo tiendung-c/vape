@@ -684,6 +684,7 @@ extends Mod {
                 activeProfile.applyEnabledModuleStates();
                 activeProfile.applyLegitEnabledModuleStates();
                 activeProfile.applyFrameStates();
+                Vape.INSTANCE.saveAndStop();
             }
         }
         ClientSettings settings = Vape.INSTANCE.getModManager().getMod(ClientSettings.class);

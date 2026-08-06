@@ -14,6 +14,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Locale;
@@ -24,6 +27,8 @@ import java.util.stream.Stream;
 /** Local, offline storage for Vape settings and client state. */
 public final class VapeStorage {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final DateTimeFormatter INJECTION_LOG_FILE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd-HH-mm");
+    private static final DateTimeFormatter INJECTION_LOG_LINE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
 
     private VapeStorage() {
     }
@@ -36,17 +41,67 @@ public final class VapeStorage {
         return Paths.get(appData, "Vape");
     }
 
-    public static Path settingsFile() {
-        return root().resolve("settings.json");
+    public static Path configDirectory() {
+        return root().resolve("config");
     }
 
-    /** Local list of Minecraft 1.8.9 offline/cracked accounts. */
+    public static Path profilesDirectory() {
+        return configDirectory().resolve("profiles");
+    }
+
+    public static Path accountsDirectory() {
+        return root().resolve("accounts");
+    }
+
+    public static Path logsDirectory() {
+        return root().resolve("logs");
+    }
+
+    /** Creates the stable local folder layout used by the offline client. */
+    public static void ensureDirectories() {
+        try {
+            Files.createDirectories(profilesDirectory());
+            Files.createDirectories(accountsDirectory());
+            Files.createDirectories(logsDirectory());
+        }
+        catch (IOException ignored) {
+            // Each individual save retries directory creation if needed.
+        }
+    }
+
+    /** Appends Java-side injection diagnostics while preserving console output. */
+    public static void appendInjectionLog(String message) {
+        LocalDateTime now = LocalDateTime.now();
+        Path logFile = logsDirectory().resolve(INJECTION_LOG_FILE_FORMAT.format(now) + ".logs");
+        String line = "[" + INJECTION_LOG_LINE_FORMAT.format(now) + "] "
+                + (message == null ? "<null>" : message) + System.lineSeparator();
+        try {
+            Files.createDirectories(logFile.getParent());
+            Files.write(logFile, line.getBytes(StandardCharsets.UTF_8),
+                    StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND);
+        }
+        catch (IOException ignored) {
+            // Logging must never interrupt injection or normal config persistence.
+        }
+    }
+
+    public static Path settingsFile() {
+        return configDirectory().resolve("settings.json");
+    }
+
+    /** Local list of offline/cracked accounts. */
     public static Path offlineAccountsFile() {
-        return root().resolve("accounts.json");
+        return accountsDirectory().resolve("offline-accounts.json");
+    }
+
+    /** Reads the old flat-file location during the one-way folder migration. */
+    public static Path existingOfflineAccountsFile() {
+        Path current = offlineAccountsFile();
+        return Files.isRegularFile(current) ? current : root().resolve("accounts.json");
     }
 
     public static Path profileFile(Profile profile) {
-        return root().resolve(profileFileName(profile != null ? profile.getName() : null));
+        return profilesDirectory().resolve(profileFileName(profile != null ? profile.getName() : null));
     }
 
     /**
@@ -54,7 +109,7 @@ public final class VapeStorage {
      * The directory is created first so the action also works on a fresh install.
      */
     public static boolean openFolder() {
-        Path directory = root();
+        Path directory = configDirectory();
         try {
             Files.createDirectories(directory);
         }
@@ -86,7 +141,8 @@ public final class VapeStorage {
     }
 
     public static JsonObject loadSettings() {
-        return readJsonObject(settingsFile());
+        JsonObject settings = readJsonObject(settingsFile());
+        return settings != null ? settings : readJsonObject(root().resolve("settings.json"));
     }
 
     /**
@@ -96,14 +152,18 @@ public final class VapeStorage {
      */
     public static JsonObject loadProfiles() {
         JsonObject profiles = new JsonObject();
-        Path directory = root();
-        if (!Files.isDirectory(directory)) {
-            return profiles;
-        }
+        addProfilesFromDirectory(profiles, profilesDirectory(), settingsFile());
+        // Compatibility for installations created before the config/ folder.
+        addProfilesFromDirectory(profiles, root(), root().resolve("settings.json"));
+        return profiles;
+    }
+
+    private static void addProfilesFromDirectory(JsonObject profiles, Path directory, Path settingsPath) {
+        if (!Files.isDirectory(directory)) return;
         try (Stream<Path> files = Files.list(directory)) {
             files.filter(Files::isRegularFile)
                     .filter(path -> path.getFileName().toString().toLowerCase().endsWith(".json"))
-                    .filter(path -> !path.getFileName().toString().equalsIgnoreCase(settingsFile().getFileName().toString()))
+                    .filter(path -> !path.toAbsolutePath().equals(settingsPath.toAbsolutePath()))
                     .sorted()
                     .forEach(path -> {
                         JsonObject profile = readJsonObject(path);
@@ -122,14 +182,13 @@ public final class VapeStorage {
         catch (IOException | RuntimeException ignored) {
             // A single unreadable file must not prevent the client from loading.
         }
-        return profiles;
     }
 
     /**
      * Saves one JSON file per profile and removes stale profile JSON files.
      */
     public static void saveProfiles(Collection<Profile> profiles) throws IOException {
-        Files.createDirectories(root());
+        Files.createDirectories(profilesDirectory());
         Set<String> activeFiles = new HashSet<String>();
         for (Profile profile : profiles) {
             if (profile == null || profile.getLocalId() == null) {
@@ -159,14 +218,13 @@ public final class VapeStorage {
         if (localId == null) {
             return;
         }
-        Path directory = root();
+        Path directory = profilesDirectory();
         if (!Files.isDirectory(directory)) {
             return;
         }
         try (Stream<Path> files = Files.list(directory)) {
             files.filter(Files::isRegularFile)
                     .filter(path -> path.getFileName().toString().toLowerCase().endsWith(".json"))
-                    .filter(path -> !path.getFileName().toString().equalsIgnoreCase(settingsFile().getFileName().toString()))
                     .forEach(path -> {
                         JsonObject profile = readJsonObject(path);
                         if (isProfileJson(profile) && hasUuid(profile, localId)) {
@@ -186,11 +244,10 @@ public final class VapeStorage {
     }
 
     private static void removeStaleProfileFiles(Set<String> activeFiles) throws IOException {
-        Path directory = root();
+        Path directory = profilesDirectory();
         try (Stream<Path> files = Files.list(directory)) {
             files.filter(Files::isRegularFile)
                     .filter(path -> path.getFileName().toString().toLowerCase().endsWith(".json"))
-                    .filter(path -> !path.getFileName().toString().equalsIgnoreCase(settingsFile().getFileName().toString()))
                     .forEach(path -> {
                         JsonObject profile = readJsonObject(path);
                         String fileName = path.getFileName().toString().toLowerCase(Locale.ROOT);
@@ -207,14 +264,13 @@ public final class VapeStorage {
     }
 
     private static void removeProfileFilesForId(UUID localId, Path keep) throws IOException {
-        Path directory = root();
+        Path directory = profilesDirectory();
         if (!Files.isDirectory(directory)) {
             return;
         }
         try (Stream<Path> files = Files.list(directory)) {
             files.filter(Files::isRegularFile)
                     .filter(path -> path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".json"))
-                    .filter(path -> !path.getFileName().toString().equalsIgnoreCase(settingsFile().getFileName().toString()))
                     .forEach(path -> {
                         JsonObject profile = readJsonObject(path);
                         if (isProfileJson(profile) && hasUuid(profile, localId)

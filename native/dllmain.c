@@ -39,10 +39,8 @@ static int module_directory(wchar_t *output, size_t capacity) {
 void vape_log(const wchar_t *format, ...) {
     wchar_t message[2048];
     wchar_t line[2304];
-    wchar_t directory[MAX_PATH];
-    wchar_t log_path[MAX_PATH];
+    char utf8_line[8192];
     SYSTEMTIME now;
-    FILE *file = NULL;
     va_list arguments;
 
     va_start(arguments, format);
@@ -55,15 +53,9 @@ void vape_log(const wchar_t *format, ...) {
             now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute,
             now.wSecond, now.wMilliseconds, message);
     OutputDebugStringW(line);
-
-    if (!module_directory(directory, sizeof(directory) / sizeof(directory[0]))) {
-        return;
-    }
-    _snwprintf_s(log_path, sizeof(log_path) / sizeof(log_path[0]), _TRUNCATE,
-            L"%ls\\vape421-native.log", directory);
-    if (_wfopen_s(&file, log_path, L"a, ccs=UTF-8") == 0 && file != NULL) {
-        fputws(line, file);
-        fclose(file);
+    if (WideCharToMultiByte(CP_UTF8, 0, line, -1, utf8_line,
+            (int)(sizeof(utf8_line)), NULL, NULL) > 0) {
+        vape_loader_report_log(utf8_line);
     }
 }
 

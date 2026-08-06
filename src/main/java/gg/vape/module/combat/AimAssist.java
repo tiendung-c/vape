@@ -5,9 +5,7 @@ import gg.vape.config.ClientSettings;
 import gg.vape.mapping.MappedClasses;
 import gg.vape.module.Category;
 import gg.vape.module.Mod;
-import gg.vape.module.combat.aimassist.AimAssistRotationSubModule;
-import gg.vape.module.combat.aimassist.AimAssistTargetingSubModule;
-import gg.vape.module.combat.aimassist.AimModeMyau;
+import gg.vape.module.combat.aimassist.SlinkyAimAssistMode;
 import gg.vape.module.control.SharedModuleControlClaims;
 import gg.vape.unmap.ItemLimitData;
 import gg.vape.unmap.ModeOption;
@@ -45,12 +43,10 @@ extends Mod {
     protected final ModeValue mode;
     public final ModeOption closestAreaMode;
     public final ModeOption centerMode;
-    private final AimAssistTargetingSubModule adaptiveTargeting;
     public final ModeOption yawMode;
     public final ModeOption threatMode;
     private final NumberValue horizontalSpeed;
-    private final AimAssistRotationSubModule simpleRotation = new AimAssistRotationSubModule(this, "Simple");
-    private final AimModeMyau myauMode = new AimModeMyau(this, "OpenMyau");
+    private final SlinkyAimAssistMode slinkyMode = new SlinkyAimAssistMode(this, "Slinky");
     private final LimitValue allowedItems;
     private final NumberValue maxAngle;
     private final BooleanValue limitToItems;
@@ -135,11 +131,13 @@ extends Mod {
         if (target.w$src$F$15l9epb() <= 0.0f || target.M$src$Z$ff28xj()) {
             return false;
         }
-        if (Minecraft.thePlayer().getDistanceToEntity(target) >= (float)((Double)this.distance.getValue()).intValue()) {
-            return false;
-        }
-        if (RotationUtil.a(Minecraft.thePlayer(), target) > ((Double)this.maxAngle.getValue()).intValue() / 2) {
-            return false;
+        if (!this.slinkyMode.isSelectedSubModule()) {
+            if (Minecraft.thePlayer().getDistanceToEntity(target) >= (float)((Double)this.distance.getValue()).intValue()) {
+                return false;
+            }
+            if (RotationUtil.a(Minecraft.thePlayer(), target) > ((Double)this.maxAngle.getValue()).intValue() / 2) {
+                return false;
+            }
         }
         if (Vape.INSTANCE.getFriendManager().isFriend(target)) {
             return false;
@@ -165,8 +163,7 @@ extends Mod {
 
     public AimAssist() {
         super("AimAssist", -327674, Category.COMBAT, "Smoothly aims to closest valid target");
-        this.adaptiveTargeting = new AimAssistTargetingSubModule(this, "Adaptive");
-        this.mode = ModeValue.create((Object)this, "Mode", "Simple - Lightweight smooth aiming\nAdaptive - Advanced tracking with adaptive behavior\nOpenMyau - OpenMyau-style nearest-target smoothing", (ModeSelection)this.simpleRotation.getSelectionValue(), this.simpleRotation.getSelectionValue(), this.adaptiveTargeting.getSelectionValue(), this.myauMode.getSelectionValue());
+        this.mode = ModeValue.create((Object)this, "Mode", "Slinky - Configurable regular, linear and lock-on camera aiming", (ModeSelection)this.slinkyMode.getSelectionValue(), this.slinkyMode.getSelectionValue());
         this.targetFilter = EntityTargetFilterValue.createForModule(this);
         this.requireMouseDown = BooleanValue.create(this, "Require mouse down", true, "Only aim while mouse is down");
         this.aimVertically = BooleanValue.create(this, "Aim vertically", false, "Aims up and down as well");
@@ -195,7 +192,8 @@ extends Mod {
         this.breakBlocksWhitelist.setCompactListValue(this.blockBreakItems);
         this.breakBlocksWhitelist.addDependentValues(this.blockBreakItems);
         this.checkBlockBreak.addDependentValues(this.breakBlocksWhitelist);
-        this.addValue(this.mode, this.targetFilter, this.requireMouseDown, this.strafeIncrease, this.checkBlockBreak, this.breakBlocksWhitelist, this.blockBreakItems, this.aimVertically, this.verticalSpeed, this.horizontalSpeed, this.maxAngle, this.distance, this.limitToItems, this.allowedItems, this.targetArea, this.targetMode);
+        this.addValue(this.targetFilter, this.requireMouseDown, this.strafeIncrease, this.checkBlockBreak, this.breakBlocksWhitelist, this.blockBreakItems, this.limitToItems, this.allowedItems);
+        this.P(this.mode);
         this.horizontalSpeed.setMaximumFractionDigits(0);
     }
 
@@ -205,16 +203,13 @@ extends Mod {
 
     @Override
     public String getDetailedSuffix() {
-        return this.horizontalSpeed.getDisplayValue();
+        return this.mode.getDisplayValue();
     }
 
     @Nullable
     public EntityLivingBase getCurrentTarget() {
-        if (this.simpleRotation.isSelectedSubModule()) {
-            return this.simpleRotation.getTarget();
-        }
-        if (this.adaptiveTargeting.isSelectedSubModule()) {
-            return this.adaptiveTargeting.getTarget();
+        if (this.slinkyMode.isSelectedSubModule()) {
+            return this.slinkyMode.getTarget();
         }
         return null;
     }

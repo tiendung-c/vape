@@ -19,11 +19,12 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
 /**
- * Local account switcher for Minecraft 1.8.9. It creates the same offline
+ * Local account switcher for supported Minecraft versions. It creates the same offline
  * UUID used by the vanilla client and never contacts Microsoft/Xbox services.
  */
 public final class OfflineAccountManager {
@@ -35,7 +36,7 @@ public final class OfflineAccountManager {
     public void load() {
         this.accountNames.clear();
         this.activeIndex = 0;
-        Path file = VapeStorage.offlineAccountsFile();
+        Path file = VapeStorage.existingOfflineAccountsFile();
         try {
             if (Files.isRegularFile(file)) {
                 try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
@@ -97,7 +98,7 @@ public final class OfflineAccountManager {
 
     private String readCurrentUsername() {
         try {
-            if (!ForgeVersion.MC_1_8_9.L()) return null;
+            if (!ForgeVersion.MC_1_8_9.d()) return null;
             return Minecraft.Q$src$Lgg_vape_account_MinecraftSessionWrapper_$1ftnn3u().getUsername();
         }
         catch (Throwable ignored) {
@@ -117,10 +118,10 @@ public final class OfflineAccountManager {
 
     /**
      * Adds an offline account (or selects it when it already exists) and
-     * applies it to the current 1.8.9 Minecraft session.
+     * applies it to the current Minecraft session.
      */
     public boolean addAndApply(String name) {
-        if (!ForgeVersion.MC_1_8_9.L()) return false;
+        if (!ForgeVersion.MC_1_8_9.d()) return false;
         if (!isValidName(name)) {
             if (Vape.INSTANCE.getNotificationManager() != null) {
                 Vape.INSTANCE.getNotificationManager().showInfo(
@@ -151,7 +152,7 @@ public final class OfflineAccountManager {
 
     /** Selects an existing account from the Accounts screen. */
     public boolean selectAndApply(String name) {
-        if (!ForgeVersion.MC_1_8_9.L() || name == null) return false;
+        if (!ForgeVersion.MC_1_8_9.d() || name == null) return false;
         for (int index = 0; index < this.accountNames.size(); ++index) {
             if (!this.accountNames.get(index).equalsIgnoreCase(name)) continue;
             this.activeIndex = index;
@@ -163,14 +164,23 @@ public final class OfflineAccountManager {
     }
 
     public boolean applyActive() {
-        if (!ForgeVersion.MC_1_8_9.L() || this.accountNames.isEmpty()) {
+        if (!ForgeVersion.MC_1_8_9.d() || this.accountNames.isEmpty()) {
             return false;
         }
         String name = this.accountNames.get(this.activeIndex);
         try {
             UUID uuid = offlineUuid(name);
             String rawUuid = uuid.toString().replace("-", "");
-            Object session = MSession.t(Vape.INSTANCE.getMappings().hw, name, rawUuid, "", "legacy");
+            Object session;
+            if (ForgeVersion.MC_1_21_10.d()) {
+                session = MSession.modern(Vape.INSTANCE.getMappings().hw, name, uuid, "",
+                        Optional.empty(), Optional.empty());
+            } else if (ForgeVersion.MC_1_20_6.d()) {
+                session = MSession.B(Vape.INSTANCE.getMappings().hw, name, uuid, "",
+                        Optional.empty(), Optional.empty(), Vape.INSTANCE.getMappingsMapperCompat().sessionType.getLegacy());
+            } else {
+                session = MSession.t(Vape.INSTANCE.getMappings().hw, name, rawUuid, "", "legacy");
+            }
             Minecraft.w(new MinecraftSessionWrapper(session));
             if (Vape.INSTANCE.getNotificationManager() != null) {
                 Vape.INSTANCE.getNotificationManager().showInfo(

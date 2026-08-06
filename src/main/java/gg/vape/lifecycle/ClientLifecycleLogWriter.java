@@ -21,16 +21,16 @@ implements ClientLifecycleCallback {
 
     public ClientLifecycleLogWriter() {
         try {
-            String clientDirectoryPath = VapeStorage.root().toString();
-            File clientDirectory = VapeStorage.root().toFile();
+            String clientDirectoryPath = VapeStorage.logsDirectory().toString();
+            File clientDirectory = VapeStorage.logsDirectory().toFile();
             if (!clientDirectory.exists() && !clientDirectory.mkdirs() && !clientDirectory.isDirectory()) {
                 throw new IOException("Unable to create " + clientDirectory);
             }
-            String logFilePath = clientDirectoryPath + File.separator + "log-"
-                    + this.timestampFormat.format(new Date()).replace(":", "-") + ".txt";
+            String logFilePath = clientDirectoryPath + File.separator
+                    + new SimpleDateFormat("yyyy-MM-dd-HH-mm").format(new Date()) + ".logs";
             Vape.debugLog("Creating log file at: " + logFilePath);
             this.logFile = new File(logFilePath);
-            FileWriter fileWriter = new FileWriter(this.logFile, false);
+            FileWriter fileWriter = new FileWriter(this.logFile, true);
             this.logWriter = new PrintWriter(fileWriter);
             Runtime.getRuntime().addShutdownHook(new Thread(this::closeFromShutdownHook));
         }

@@ -12,6 +12,7 @@ import java.util.UUID;
 public class MSession
 extends Mapping {
     private final MappingMethod D;
+    private final MappingMethod modernConstructor;
     private final MappingField C;
     private final MappingField N;
 
@@ -37,6 +38,7 @@ extends Mapping {
                 Class[] classArray = new Class[]{String.class, UUID.class, String.class, Optional.class, Optional.class};
                 MSession mSession3 = this;
                 this.D = this.registerConstructor(classArray);
+                this.modernConstructor = this.D;
             } else if (ForgeVersion.MC_1_20_6.d()) {
                 Class[] classArray = new Class[]{String.class, UUID.class, String.class, Optional.class, Optional.class, MappedClasses.SESSION_TYPE};
                 Class<Void> clazz3 = Void.TYPE;
@@ -44,6 +46,7 @@ extends Mapping {
                 String string3 = "<init>";
                 MSession mSession4 = this;
                 this.D = this.Y(string3, bl3, clazz3, classArray);
+                this.modernConstructor = null;
             } else {
                 Class[] classArray = new Class[]{String.class, String.class, String.class, String.class};
                 Class<Void> clazz4 = Void.TYPE;
@@ -51,6 +54,7 @@ extends Mapping {
                 String string4 = "<init>";
                 MSession mSession5 = this;
                 this.D = this.Y(string4, bl4, clazz4, classArray);
+                this.modernConstructor = null;
             }
             return;
         }
@@ -78,6 +82,7 @@ extends Mapping {
         String string7 = "<init>";
         MSession mSession8 = this;
         this.D = this.Y(string7, bl7, clazz7, classArray);
+        this.modernConstructor = null;
     }
 
     public static Object t(MSession mSession, String string, String string2, String string3, String string4) {
@@ -86,6 +91,11 @@ extends Mapping {
 
     public static Object B(MSession mSession, String string, UUID uUID, String string2, Optional optional, Optional optional2, Object object) {
         return mSession.O(string, uUID, string2, optional, optional2, object);
+    }
+
+    public static Object modern(MSession mSession, String username, UUID profileId, String accessToken,
+                                Optional<String> xuid, Optional<String> clientId) {
+        return mSession.modern(username, profileId, accessToken, xuid, clientId);
     }
 
     public String s(Object object) {
@@ -103,5 +113,12 @@ extends Mapping {
     private Object O(String string, UUID uUID, String string2, Optional<String> optional, Optional<String> optional2, Object object) {
         return this.D.newInstance(string, uUID, string2, optional, optional2, object);
     }
-}
 
+    private Object modern(String username, UUID profileId, String accessToken,
+                          Optional<String> xuid, Optional<String> clientId) {
+        if (this.modernConstructor == null) {
+            throw new IllegalStateException("Modern session constructor unavailable");
+        }
+        return this.modernConstructor.newInstance(username, profileId, accessToken, xuid, clientId);
+    }
+}

@@ -6,7 +6,6 @@ import gg.vape.mapping.MappedClasses;
 import gg.vape.module.Category;
 import gg.vape.module.Mod;
 import gg.vape.module.none.ClientSettings;
-import gg.vape.module.none.TextGuiSettingsFrame;
 import gg.vape.ui.click.GuiMouseEvent;
 import gg.vape.ui.click.component.ColorDividerComponent;
 import gg.vape.ui.click.component.GuiComponent;
@@ -190,10 +189,9 @@ extends ModuleCategoryFrame {
             this.g(new ColorDividerComponent(ClientSettingsSearchFrame.J.m));
             this.g(new ProfilesFrameNavigationButtonComponent().addClickListener(new ClientSettingsSearchFrameClassOpenClickHandler(this, ProfilesSettingsFrame.class)));
             this.g(new FrameNavigationButtonComponent("Macros", null, FrameMacros.class).addClickListener(new ClientSettingsSearchFrameClassOpenClickHandler(this, FrameMacros.class)));
-            this.g(new FrameNavigationButtonComponent("Text GUI", "newtextgui", TextGuiSettingsFrame.class).addClickListener(new ClientSettingsSearchFrameClassOpenClickHandler(this, TextGuiSettingsFrame.class)));
             if (ForgeVersion.MC_1_8_9.L()) {
                 this.g(new FrameNavigationButtonComponent("Accounts", "newprofiles", OfflineAccountsFrame.class)
-                        .setIconImageDivisor(4.0)
+                        .setIconVisible(false)
                         .addClickListener(new ClientSettingsSearchFrameClassOpenClickHandler(this, OfflineAccountsFrame.class)));
             }
             this.g(new ColorDividerComponent(ClientSettingsSearchFrame.J.m));
