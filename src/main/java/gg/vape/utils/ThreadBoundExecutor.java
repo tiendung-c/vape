@@ -34,10 +34,8 @@ implements Executor {
         while ((this.currentTask = this.pendingTasks.poll()) != null) {
             try {
                 this.currentTask.run();
-            } catch (Throwable error) {
-                Vape.debugLog("ThreadBoundExecutor task failed: "
-                    + error.getClass().getName()
-                    + (error.getMessage() == null ? "" : " -> " + error.getMessage()));
+            } catch (Throwable throwable) {
+                Vape.logThrowable(throwable);
             }
         }
     }
