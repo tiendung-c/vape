@@ -525,7 +525,9 @@ extends Mapping {
             if (ForgeVersion.MC_1_21_11.d()) {
                 Class[] classArray5;
                 String string21 = ForgeVersion.MC_26_1.d() ? "update" : "updateCamera";
-                if (ForgeVersion.MC_26_1.d()) {
+                if (ForgeVersion.MC_26_2.d()) {
+                    classArray5 = new Class[]{MappedClasses.uy};
+                } else if (ForgeVersion.MC_26_1.d()) {
                     Class[] classArray6 = new Class[2];
                     classArray6[0] = MappedClasses.uy;
                     classArray5 = classArray6;
@@ -828,4 +830,3 @@ extends Mapping {
         mEntityRenderer.x(object, d);
     }
 }
-
