@@ -88,8 +88,6 @@ public class AutoMace extends Mod {
     private AutoMaceRotationController rotationController;
     private BlockPlacementGraph movementSnapshot;
     private Item cachedElytra;
-    private String lastAimDiagnostic;
-    private long lastAimDiagnosticTime;
 
     private boolean releasePending;
     private boolean dispatchingSyntheticAttack;
@@ -217,7 +215,6 @@ public class AutoMace extends Mod {
         this.movementSnapshot = new BlockPlacementGraph(player);
         boolean elytraBusy = this.updateElytraState(player, event.getWorld());
         if (elytraBusy) {
-            this.traceAim("elytra-busy");
             this.releaseRotation();
         } else {
             this.updateAim(player, event.getWorld());
@@ -376,14 +373,12 @@ public class AutoMace extends Mod {
                 || player.f$src$Z$fst3rk() || player.h$src$Z$ftwoya() || player.S$src$Z$151gttj()
                 || player.C$src$Lgg_vape_wrapper_impl_ModelPlayer_$19uhx86().isFlying()
                 || !this.hasMaceInHotbar()) {
-            this.traceAim(this.getAimGateDiagnostic(player, world));
             this.releaseRotation();
             return;
         }
 
         EntityLivingBase target = this.findNearestTarget(player, world);
         if (target == null) {
-            this.traceAim("no-target");
             this.releaseRotation();
             return;
         }
@@ -392,22 +387,18 @@ public class AutoMace extends Mod {
         boolean fallingForSmash = RotationUtil.u(player);
         boolean directlyReachable = fallingForSmash
                 && distanceToTarget(player.z(), player.N() + player.X(), player.h(), target, 0.0, 0.0, 0.0) <= reach;
-        List<FallSample> samples = this.simulateTrajectory(player, world, false, 0);
-        ImpactPrediction prediction = this.findImpact(samples, target, reach);
+        ImpactPrediction prediction = this.findImpact(this.simulateTrajectory(player, world, false, 0), target, reach);
         if (!(prediction.valid && prediction.tick <= MAX_AIM_IMPACT_TICK || directlyReachable)) {
-            this.traceAim(this.getPredictionDiagnostic(samples, target, reach, prediction, fallingForSmash));
             this.releaseRotation();
             return;
         }
 
         if (this.rotationClaim.isBlockedFor(this)) {
-            this.traceAim("rotation-blocked");
             this.releaseRotation();
             return;
         }
         boolean silent = this.silentAim.getEffectiveValue().booleanValue();
         if (!this.rotationClaim.isOwnedBy(this) && !this.rotationClaim.acquire(this, silent)) {
-            this.traceAim("rotation-acquire-failed");
             return;
         }
         if (this.rotationController == null
@@ -421,68 +412,6 @@ public class AutoMace extends Mod {
         this.rotationController.setPrediction(prediction.valid, prediction.tick,
                 prediction.sourceX, prediction.sourceY, prediction.sourceZ,
                 prediction.aimX, prediction.aimY, prediction.aimZ, directlyReachable);
-        this.traceAim("controller " + (silent ? "silent" : "visible")
-                + " impact=" + (prediction.valid ? prediction.tick : -1)
-                + " direct=" + directlyReachable
-                + " committed=" + this.rotationController.isCommittedToAim()
-                + " " + this.rotationController.getAimDiagnostic());
-    }
-
-    private String getAimGateDiagnostic(EntityPlayerSP player, WorldClient world) {
-        if (!this.aim.getEffectiveValue().booleanValue()) return "gate:aim-disabled";
-        if (world.isNull()) return "gate:no-world";
-        if (this.movementSnapshot == null) return "gate:no-snapshot";
-        if (!this.canOperate()) return "gate:cannot-operate";
-        if (player.b$src$Z$fqlxe4()) return "gate:on-ground";
-        if (player.Y$src$Z$154rldp()) return "gate:fall-flying";
-        if (player.f$src$Z$fst3rk()) return "gate:passenger";
-        if (player.h$src$Z$ftwoya()) return "gate:in-water";
-        if (player.S$src$Z$151gttj()) return "gate:on-ladder";
-        if (player.C$src$Lgg_vape_wrapper_impl_ModelPlayer_$19uhx86().isFlying()) return "gate:creative-flight";
-        if (!this.hasMaceInHotbar()) return "gate:no-mace";
-        return "gate:unknown";
-    }
-
-    private String getPredictionDiagnostic(List<FallSample> samples, EntityLivingBase target, double reach,
-                                           ImpactPrediction prediction, boolean fallingForSmash) {
-        double closestDistance = Double.MAX_VALUE;
-        float maxFallDistance = 0.0f;
-        int firstGroundTick = -1;
-        for (FallSample sample : samples) {
-            double horizontalTicks = Math.min(sample.tick, 5);
-            double offsetX = target.t() * horizontalTicks;
-            double offsetZ = target.T() * horizontalTicks;
-            double offsetY = target.b$src$Z$fqlxe4() ? 0.0 : target.q() * Math.min(sample.tick, 3);
-            closestDistance = Math.min(closestDistance,
-                    distanceToTarget(sample.x, sample.y, sample.z, target, offsetX, offsetY, offsetZ));
-            maxFallDistance = Math.max(maxFallDistance, sample.fallDistance);
-            if (firstGroundTick < 0 && sample.onGround) firstGroundTick = sample.tick;
-        }
-        return "prediction impact=" + (prediction.valid ? prediction.tick : -1)
-                + " samples=" + samples.size()
-                + " closest=" + roundDiagnostic(closestDistance)
-                + " threshold=" + roundDiagnostic(reach * REACH_MARGIN)
-                + " maxFall=" + roundDiagnostic(maxFallDistance)
-                + " ground=" + firstGroundTick
-                + " smash=" + fallingForSmash;
-    }
-
-    private void traceAim(String diagnostic) {
-        long now = System.currentTimeMillis();
-        if (diagnostic == null || diagnostic.equals(this.lastAimDiagnostic)
-                || now - this.lastAimDiagnosticTime < 500L) {
-            return;
-        }
-        this.lastAimDiagnostic = diagnostic;
-        this.lastAimDiagnosticTime = now;
-        Vape.debugLog("AutoMace aim: " + diagnostic);
-    }
-
-    private static double roundDiagnostic(double value) {
-        if (value == Double.MAX_VALUE || Double.isNaN(value) || Double.isInfinite(value)) {
-            return value;
-        }
-        return Math.round(value * 100.0) / 100.0;
     }
 
     private List<FallSample> simulateTrajectory(EntityPlayerSP player, WorldClient world,

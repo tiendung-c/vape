@@ -246,32 +246,6 @@ public class AutoMaceRotationController extends AdaptiveRotationController {
         return Math.max(2, Math.min(4, ticks));
     }
 
-    public String getAimDiagnostic() {
-        if (this.target == null || this.target.isNull()) {
-            return "no-controller-target";
-        }
-        float[] angles = this.directlyReachable
-                ? this.calculateCurrentTargetAngles(Minecraft.thePlayer())
-                : this.calculateAngles(this.sourceX, this.sourceY, this.sourceZ,
-                this.aimX, this.aimY, this.aimZ);
-        return "from=" + format(this.sourceX) + "," + format(this.sourceY) + "," + format(this.sourceZ)
-                + " to=" + format(this.aimX) + "," + format(this.aimY) + "," + format(this.aimZ)
-                + " targetRot=" + format(angles[0]) + "," + format(angles[1])
-                + " currentRot=" + format(this.getCurrentYaw()) + "," + format(this.getCurrentPitch());
-    }
-
-    private float[] calculateCurrentTargetAngles(EntityPlayerSP player) {
-        AxisAlignedBB bounds = this.target.u$src$Lgg_vape_wrapper_impl_AxisAlignedBB_$kogbsu();
-        return this.calculateAngles(player.z(), player.N() + player.X(), player.h(),
-                (bounds.getMinX() + bounds.getMaxX()) * 0.5,
-                bounds.getMinY() + (bounds.getMaxY() - bounds.getMinY()) * 0.75,
-                (bounds.getMinZ() + bounds.getMaxZ()) * 0.5);
-    }
-
-    private static double format(double value) {
-        return Math.round(value * 100.0) / 100.0;
-    }
-
     private float[] calculateAngles(double fromX, double fromY, double fromZ,
                                     double toX, double toY, double toZ) {
         double deltaX = toX - fromX;
