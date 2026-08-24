@@ -1,6 +1,7 @@
 package gg.vape.wrapper.impl;
 
 import gg.vape.mapping.mappings.MScorePlayerTeam;
+import java.util.Optional;
 
 public class ScorePlayerTeam
 extends Team {
@@ -39,6 +40,9 @@ extends Team {
 
     public TextFormatting getColor() {
         Object color = ScorePlayerTeam.vapeInstance.getMappings().scorePlayerTeam.getColor(this.getObject());
+        if (color instanceof Optional) {
+            color = ((Optional<?>)color).orElse(null);
+        }
         if (color == null) {
             return null;
         }

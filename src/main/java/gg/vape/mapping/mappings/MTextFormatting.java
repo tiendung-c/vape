@@ -16,6 +16,9 @@ extends Mapping {
         if (formatting == null) {
             return null;
         }
+        if (ForgeVersion.MC_26_2.d()) {
+            return this.getColorMethod.invokeInt(formatting, new Object[0]);
+        }
         return (Integer)this.getColorMethod.invokeObject(formatting, new Object[0]);
     }
 
@@ -25,6 +28,12 @@ extends Mapping {
 
     private MTextFormatting(String[] stringArray) {
         super(MappedClasses.l5);
+        if (ForgeVersion.MC_26_2.d()) {
+            this.getNameMethod = this.Y("getSerializedName", true, String.class, new Class[0]);
+            this.getColorMethod = this.Y("rgb", true, Integer.TYPE, new Class[0]);
+            this.getByNameMethod = this.registerStaticMethod("byName", true, MappedClasses.l5, String.class);
+            return;
+        }
         if (stringArray != null) {
             if (ForgeVersion.MC_1_21_4.d()) {
                 Class[] classArray = new Class[]{};
@@ -71,4 +80,3 @@ extends Mapping {
         return (String)this.getNameMethod.invokeObject(formatting, new Object[0]);
     }
 }
-
