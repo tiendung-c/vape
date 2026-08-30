@@ -65,6 +65,22 @@ endfunction()
 add_vape_native_target(Vape421Native
         "${VAPE421_PRODUCT_JAR}" Vape421Native)
 
+# Standalone JVMTI collector for inspecting client updates. This target stays
+# separate from Vape421Native so it can be injected without loading the Java
+# payload or changing the normal product bootstrap.
+add_library(Vape421LunarDump SHARED
+        lunar_dump.c)
+target_include_directories(Vape421LunarDump PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}"
+        "${VAPE421_JNI_INCLUDE}"
+        "${VAPE421_JNI_MD_INCLUDE}"
+        "${VAPE421_JVMTI_INCLUDE}")
+target_compile_definitions(Vape421LunarDump PRIVATE
+        WIN32_LEAN_AND_MEAN
+        _CRT_SECURE_NO_WARNINGS)
+target_compile_options(Vape421LunarDump PRIVATE /W4)
+target_link_libraries(Vape421LunarDump PRIVATE user32)
+
 add_executable(Vape421Injector injector.c)
 target_compile_definitions(Vape421Injector PRIVATE
         WIN32_LEAN_AND_MEAN
@@ -91,14 +107,14 @@ if(BUILD_TESTING)
             COMMAND Vape421BootstrapTest invalid)
 endif()
 
-set_property(TARGET Vape421Native Vape421Injector PROPERTY
+set_property(TARGET Vape421Native Vape421LunarDump Vape421Injector PROPERTY
         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
-set_target_properties(Vape421Native Vape421Injector PROPERTIES
+set_target_properties(Vape421Native Vape421LunarDump Vape421Injector PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/dist")
 foreach(configuration Debug Release RelWithDebInfo MinSizeRel)
     string(TOUPPER "${configuration}" configuration_upper)
-    set_target_properties(Vape421Native Vape421Injector PROPERTIES
+    set_target_properties(Vape421Native Vape421LunarDump Vape421Injector PROPERTIES
             RUNTIME_OUTPUT_DIRECTORY_${configuration_upper}
             "${CMAKE_BINARY_DIR}/dist")
 endforeach()

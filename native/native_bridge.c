@@ -13,6 +13,22 @@ static SRWLOCK g_capture_lock = SRWLOCK_INIT;
 static jclass g_capture_class = NULL;
 static unsigned char *g_capture_bytes = NULL;
 static jint g_capture_length = 0;
+static int g_capture_class_name_matched = 0;
+typedef struct PersistedClassDefinition {
+    jclass target;
+    unsigned char *bytes;
+    jint length;
+    struct PersistedClassDefinition *next;
+} PersistedClassDefinition;
+
+static SRWLOCK g_persisted_class_lock = SRWLOCK_INIT;
+static PersistedClassDefinition *g_persisted_classes = NULL;
+static volatile LONG g_retain_class_transforms = 0;
+static SRWLOCK g_redefinition_lock = SRWLOCK_INIT;
+static volatile LONG g_redefinition_active = 0;
+static jclass g_redefinition_class = NULL;
+static const unsigned char *g_redefinition_bytes = NULL;
+static jint g_redefinition_length = 0;
 static jclass g_bridge_class = NULL;
 static jmethodID g_bridge_om = NULL;
 static jmethodID g_bridge_wh = NULL;
@@ -57,6 +73,353 @@ static void throw_new(JNIEnv *env, const char *type, const char *message) {
     }
 }
 
+static int contains_bytes(const unsigned char *haystack, jint haystack_length,
+        const char *needle) {
+    size_t needle_length;
+    jint offset;
+    if (haystack == NULL || haystack_length <= 0 || needle == NULL) {
+        return 0;
+    }
+    needle_length = strlen(needle);
+    if (needle_length == 0 || needle_length > (size_t)haystack_length) {
+        return 0;
+    }
+    for (offset = 0;
+            offset <= haystack_length - (jint)needle_length; ++offset) {
+        if (memcmp(haystack + offset, needle, needle_length) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int contains_vape_callback(const unsigned char *bytes, jint length) {
+    return contains_bytes(bytes, length, "gg/vape/")
+            || contains_bytes(bytes, length, "gg.vape.");
+}
+
+static int supply_hook_bytes(jvmtiEnv *jvmti_env,
+        const unsigned char *bytes, jint length,
+        jint *new_class_data_len, unsigned char **new_class_data) {
+    unsigned char *copy = NULL;
+    if (jvmti_env == NULL || bytes == NULL || length <= 0
+            || new_class_data_len == NULL || new_class_data == NULL
+            || (*jvmti_env)->Allocate(jvmti_env, length, &copy)
+                    != JVMTI_ERROR_NONE
+            || copy == NULL) {
+        return 0;
+    }
+    memcpy(copy, bytes, (size_t)length);
+    *new_class_data_len = length;
+    *new_class_data = copy;
+    return 1;
+}
+
+static uint16_t read_u16(const unsigned char *bytes, jint length,
+        jint *offset) {
+    uint16_t value;
+    if (bytes == NULL || offset == NULL || *offset < 0
+            || *offset > length - 2) {
+        return 0;
+    }
+    value = (uint16_t)(((uint16_t)bytes[*offset] << 8)
+            | (uint16_t)bytes[*offset + 1]);
+    *offset += 2;
+    return value;
+}
+
+/*
+ * LaunchClassLoader/OptiFine can expose more than one ClassFileLoadHook stage
+ * during retransformation.  The first stage may still use the obfuscated
+ * this_class (for example avp), even though the Class object being rebuilt is
+ * net.minecraft.client.gui.Gui.  Select a matching class-file identity and
+ * never let a later pre-transform stage overwrite it.
+ */
+static int class_data_matches_target(jclass target,
+        const unsigned char *bytes, jint length) {
+    jint offset = 0;
+    uint16_t constant_pool_count;
+    uint16_t this_class;
+    uint16_t *class_name_indices = NULL;
+    const unsigned char **utf8_bytes = NULL;
+    uint16_t *utf8_lengths = NULL;
+    char *signature = NULL;
+    const unsigned char *class_name;
+    uint16_t class_name_length;
+    uint16_t name_index;
+    uint16_t entry_index;
+    jvmtiError signature_error;
+    int result = 0;
+
+    if (g_jvmti == NULL || target == NULL || bytes == NULL || length < 10
+            || bytes[0] != 0xCA || bytes[1] != 0xFE
+            || bytes[2] != 0xBA || bytes[3] != 0xBE) {
+        return 0;
+    }
+    offset = 8;
+    constant_pool_count = read_u16(bytes, length, &offset);
+    if (constant_pool_count < 2) {
+        return 0;
+    }
+    class_name_indices = (uint16_t *)calloc(constant_pool_count,
+            sizeof(*class_name_indices));
+    utf8_bytes = (const unsigned char **)calloc(constant_pool_count,
+            sizeof(*utf8_bytes));
+    utf8_lengths = (uint16_t *)calloc(constant_pool_count,
+            sizeof(*utf8_lengths));
+    if (class_name_indices == NULL || utf8_bytes == NULL
+            || utf8_lengths == NULL) {
+        goto cleanup;
+    }
+    for (entry_index = 1; entry_index < constant_pool_count; ++entry_index) {
+        unsigned char tag;
+        if (offset >= length) {
+            goto cleanup;
+        }
+        tag = bytes[offset++];
+        switch (tag) {
+            case 1: {
+                uint16_t utf8_length = read_u16(bytes, length, &offset);
+                if (offset > length - (jint)utf8_length) {
+                    goto cleanup;
+                }
+                utf8_bytes[entry_index] = bytes + offset;
+                utf8_lengths[entry_index] = utf8_length;
+                offset += utf8_length;
+                break;
+            }
+            case 3:
+            case 4:
+                if (offset > length - 4) goto cleanup;
+                offset += 4;
+                break;
+            case 5:
+            case 6:
+                if (offset > length - 8) goto cleanup;
+                offset += 8;
+                ++entry_index;
+                break;
+            case 7:
+                class_name_indices[entry_index] = read_u16(bytes, length, &offset);
+                break;
+            case 8:
+            case 16:
+            case 19:
+            case 20:
+                if (offset > length - 2) goto cleanup;
+                offset += 2;
+                break;
+            case 9:
+            case 10:
+            case 11:
+            case 12:
+            case 17:
+            case 18:
+                if (offset > length - 4) goto cleanup;
+                offset += 4;
+                break;
+            case 15:
+                if (offset > length - 3) goto cleanup;
+                offset += 3;
+                break;
+            default:
+                goto cleanup;
+        }
+    }
+    if (offset > length - 6) {
+        goto cleanup;
+    }
+    (void)read_u16(bytes, length, &offset); /* access_flags */
+    this_class = read_u16(bytes, length, &offset);
+    if (this_class == 0 || this_class >= constant_pool_count) {
+        goto cleanup;
+    }
+    name_index = class_name_indices[this_class];
+    if (name_index == 0 || name_index >= constant_pool_count
+            || utf8_bytes[name_index] == NULL) {
+        goto cleanup;
+    }
+    class_name = utf8_bytes[name_index];
+    class_name_length = utf8_lengths[name_index];
+
+    signature_error = (*g_jvmti)->GetClassSignature(g_jvmti, target,
+            &signature, NULL);
+    if (signature_error != JVMTI_ERROR_NONE || signature == NULL
+            || signature[0] != 'L') {
+        goto cleanup;
+    }
+    {
+        size_t signature_length = strlen(signature);
+        size_t expected_length = signature_length > 1
+                && signature[signature_length - 1] == ';'
+                ? signature_length - 2 : signature_length - 1;
+        if (expected_length == class_name_length
+                && memcmp(class_name, signature + 1, expected_length) == 0) {
+            result = 1;
+        }
+    }
+
+cleanup:
+    if (signature != NULL) {
+        (*g_jvmti)->Deallocate(g_jvmti, (unsigned char *)signature);
+    }
+    free(class_name_indices);
+    free(utf8_bytes);
+    free(utf8_lengths);
+    return result;
+}
+
+static void capture_class_bytes(JNIEnv *env, jclass target,
+        const unsigned char *bytes, jint length) {
+    unsigned char *copy;
+    int class_name_matched;
+    if (env == NULL || target == NULL || g_capture_class == NULL
+            || bytes == NULL || length <= 0
+            || !(*env)->IsSameObject(env, target, g_capture_class)) {
+        return;
+    }
+    class_name_matched = class_data_matches_target(target, bytes, length);
+    if (g_capture_bytes != NULL && g_capture_class_name_matched
+            && !class_name_matched) {
+        return;
+    }
+    copy = (unsigned char *)HeapAlloc(
+            GetProcessHeap(), 0, (SIZE_T)length);
+    if (copy == NULL) {
+        return;
+    }
+    memcpy(copy, bytes, (size_t)length);
+    if (g_capture_bytes != NULL) {
+        HeapFree(GetProcessHeap(), 0, g_capture_bytes);
+    }
+    g_capture_bytes = copy;
+    g_capture_length = length;
+    g_capture_class_name_matched = class_name_matched;
+}
+
+static void update_persisted_class(JNIEnv *env, jclass target,
+        const unsigned char *bytes, jint length) {
+    PersistedClassDefinition *entry;
+    PersistedClassDefinition *previous = NULL;
+    unsigned char *copy = NULL;
+    int should_persist = contains_vape_callback(bytes, length);
+
+    if (should_persist) {
+        copy = (unsigned char *)HeapAlloc(
+                GetProcessHeap(), 0, (SIZE_T)length);
+        if (copy == NULL) {
+            vape_log(L"unable to retain transformed class bytecode");
+            return;
+        }
+        memcpy(copy, bytes, (size_t)length);
+    }
+
+    AcquireSRWLockExclusive(&g_persisted_class_lock);
+    entry = g_persisted_classes;
+    while (entry != NULL
+            && !(*env)->IsSameObject(env, entry->target, target)) {
+        previous = entry;
+        entry = entry->next;
+    }
+    if (!should_persist) {
+        if (entry != NULL) {
+            if (previous == NULL) {
+                g_persisted_classes = entry->next;
+            } else {
+                previous->next = entry->next;
+            }
+            (*env)->DeleteGlobalRef(env, entry->target);
+            HeapFree(GetProcessHeap(), 0, entry->bytes);
+            HeapFree(GetProcessHeap(), 0, entry);
+        }
+        ReleaseSRWLockExclusive(&g_persisted_class_lock);
+        return;
+    }
+    if (entry != NULL) {
+        HeapFree(GetProcessHeap(), 0, entry->bytes);
+        entry->bytes = copy;
+        entry->length = length;
+        ReleaseSRWLockExclusive(&g_persisted_class_lock);
+        return;
+    }
+
+    entry = (PersistedClassDefinition *)HeapAlloc(
+            GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*entry));
+    if (entry != NULL) {
+        entry->target = (jclass)(*env)->NewGlobalRef(env, target);
+    }
+    if (entry == NULL || entry->target == NULL) {
+        if (entry != NULL) {
+            HeapFree(GetProcessHeap(), 0, entry);
+        }
+        HeapFree(GetProcessHeap(), 0, copy);
+        ReleaseSRWLockExclusive(&g_persisted_class_lock);
+        vape_log(L"unable to retain transformed class identity");
+        return;
+    }
+    entry->bytes = copy;
+    entry->length = length;
+    entry->next = g_persisted_classes;
+    g_persisted_classes = entry;
+    ReleaseSRWLockExclusive(&g_persisted_class_lock);
+}
+
+static void clear_persisted_classes(JNIEnv *env) {
+    PersistedClassDefinition *entry;
+    AcquireSRWLockExclusive(&g_persisted_class_lock);
+    entry = g_persisted_classes;
+    g_persisted_classes = NULL;
+    ReleaseSRWLockExclusive(&g_persisted_class_lock);
+    while (entry != NULL) {
+        PersistedClassDefinition *next = entry->next;
+        if (env != NULL && entry->target != NULL) {
+            (*env)->DeleteGlobalRef(env, entry->target);
+        }
+        if (entry->bytes != NULL) {
+            HeapFree(GetProcessHeap(), 0, entry->bytes);
+        }
+        HeapFree(GetProcessHeap(), 0, entry);
+        entry = next;
+    }
+}
+
+static int detect_badlion_189_runtime(void) {
+    jint class_count = 0;
+    jclass *classes = NULL;
+    jvmtiError error;
+    jint index;
+    int has_minecraft_189 = 0;
+    int has_badlion_class = 0;
+
+    if (g_jvmti == NULL) {
+        return 0;
+    }
+    error = (*g_jvmti)->GetLoadedClasses(
+            g_jvmti, &class_count, &classes);
+    if (error != JVMTI_ERROR_NONE || classes == NULL) {
+        return 0;
+    }
+    for (index = 0; index < class_count; ++index) {
+        char *signature = NULL;
+        if ((*g_jvmti)->GetClassSignature(g_jvmti, classes[index],
+                &signature, NULL) != JVMTI_ERROR_NONE
+                || signature == NULL) {
+            continue;
+        }
+        if (strcmp(signature, "Lave;") == 0) {
+            has_minecraft_189 = 1;
+        } else if (strncmp(signature, "Lnet/badlion/", 13) == 0) {
+            has_badlion_class = 1;
+        }
+        (*g_jvmti)->Deallocate(g_jvmti, (unsigned char *)signature);
+        if (has_minecraft_189 && has_badlion_class) {
+            break;
+        }
+    }
+    (*g_jvmti)->Deallocate(g_jvmti, (unsigned char *)classes);
+    return has_minecraft_189 && has_badlion_class;
+}
+
 static void JNICALL class_file_load_hook(
         jvmtiEnv *jvmti_env,
         JNIEnv *env,
@@ -68,7 +431,6 @@ static void JNICALL class_file_load_hook(
         const unsigned char *class_data,
         jint *new_class_data_len,
         unsigned char **new_class_data) {
-    unsigned char *copy;
     (void)jvmti_env;
     (void)loader;
     (void)name;
@@ -79,21 +441,42 @@ static void JNICALL class_file_load_hook(
     if (new_class_data != NULL) {
         *new_class_data = NULL;
     }
-    if (env == NULL || class_being_redefined == NULL || g_capture_class == NULL
-            || class_data == NULL || class_data_len <= 0
-            || !(*env)->IsSameObject(env, class_being_redefined, g_capture_class)) {
+    if (env == NULL || class_being_redefined == NULL
+            || class_data == NULL || class_data_len <= 0) {
         return;
     }
-    copy = (unsigned char *)HeapAlloc(GetProcessHeap(), 0, (SIZE_T)class_data_len);
-    if (copy == NULL) {
+
+    if (InterlockedCompareExchange(&g_redefinition_active, 0, 0) != 0
+            && g_redefinition_class != NULL
+            && (*env)->IsSameObject(env, class_being_redefined,
+                    g_redefinition_class)) {
+        capture_class_bytes(env, class_being_redefined,
+                g_redefinition_bytes, g_redefinition_length);
+        supply_hook_bytes(jvmti_env, g_redefinition_bytes,
+                g_redefinition_length, new_class_data_len, new_class_data);
         return;
     }
-    memcpy(copy, class_data, (size_t)class_data_len);
-    if (g_capture_bytes != NULL) {
-        HeapFree(GetProcessHeap(), 0, g_capture_bytes);
+
+    AcquireSRWLockShared(&g_persisted_class_lock);
+    {
+        PersistedClassDefinition *entry = g_persisted_classes;
+        while (entry != NULL
+                && !(*env)->IsSameObject(env, entry->target,
+                        class_being_redefined)) {
+            entry = entry->next;
+        }
+        if (entry != NULL) {
+            capture_class_bytes(env, class_being_redefined,
+                    entry->bytes, entry->length);
+            supply_hook_bytes(jvmti_env, entry->bytes, entry->length,
+                    new_class_data_len, new_class_data);
+            ReleaseSRWLockShared(&g_persisted_class_lock);
+            return;
+        }
     }
-    g_capture_bytes = copy;
-    g_capture_length = class_data_len;
+    ReleaseSRWLockShared(&g_persisted_class_lock);
+    capture_class_bytes(env, class_being_redefined,
+            class_data, class_data_len);
 }
 
 jint vape_initialize_jvmti(JavaVM *vm) {
@@ -138,6 +521,14 @@ jint vape_initialize_jvmti(JavaVM *vm) {
         vape_log(L"SetEventCallbacks failed: %d", error);
         return JNI_ERR;
     }
+    error = (*g_jvmti)->SetEventNotificationMode(g_jvmti, JVMTI_ENABLE,
+            JVMTI_EVENT_CLASS_FILE_LOAD_HOOK, NULL);
+    if (error != JVMTI_ERROR_NONE) {
+        vape_log(L"Enable ClassFileLoadHook failed: %d", error);
+        return JNI_ERR;
+    }
+    InterlockedExchange(&g_retain_class_transforms,
+            detect_badlion_189_runtime() ? 1 : 0);
     return JNI_OK;
 }
 
@@ -147,6 +538,7 @@ static jint JNICALL native_scb(
     jbyte *bytes;
     jsize length;
     jvmtiError error;
+    int retain_transforms;
     (void)bridge;
     if (g_jvmti == NULL || target == NULL || class_bytes == NULL) {
         return JVMTI_ERROR_INVALID_ENVIRONMENT;
@@ -159,31 +551,56 @@ static jint JNICALL native_scb(
     definition.klass = target;
     definition.class_byte_count = length;
     definition.class_bytes = (const unsigned char *)bytes;
+    AcquireSRWLockExclusive(&g_redefinition_lock);
+    retain_transforms = InterlockedCompareExchange(
+            &g_retain_class_transforms, 0, 0) != 0;
+    if (retain_transforms) {
+        g_redefinition_class = target;
+        g_redefinition_bytes = (const unsigned char *)bytes;
+        g_redefinition_length = length;
+        InterlockedExchange(&g_redefinition_active, 1);
+    }
     error = (*g_jvmti)->RedefineClasses(g_jvmti, 1, &definition);
+    if (retain_transforms) {
+        InterlockedExchange(&g_redefinition_active, 0);
+        g_redefinition_class = NULL;
+        g_redefinition_bytes = NULL;
+        g_redefinition_length = 0;
+    }
+    if (error == JVMTI_ERROR_NONE && retain_transforms) {
+        update_persisted_class(env, target,
+                (const unsigned char *)bytes, length);
+    }
+    ReleaseSRWLockExclusive(&g_redefinition_lock);
     (*env)->ReleaseByteArrayElements(env, class_bytes, bytes, JNI_ABORT);
     log_jvmti_failure(L"scb RedefineClasses", error, target);
     return error;
 }
 
 static void JNICALL native_smd(
-        JNIEnv *env, jclass bridge, jint ignored, jint message) {
+        JNIEnv *env, jclass bridge, jint button_mask, jint message) {
     POINT point;
     HWND window;
     WCHAR class_name[256];
+    WPARAM wparam;
     (void)env;
     (void)bridge;
-    (void)ignored;
     memset(&point, 0, sizeof(point));
-    GetCursorPos(&point);
-    window = GetForegroundWindow();
+    window = g_lwjgl3_window != NULL && IsWindow(g_lwjgl3_window)
+            ? g_lwjgl3_window : GetForegroundWindow();
     if (window == NULL || GetClassNameW(window, class_name, 256) <= 0) {
         return;
     }
     if (wcscmp(class_name, L"LWJGL") != 0
-            && wcscmp(class_name, L"LWJGL3") != 0) {
+            && wcscmp(class_name, L"LWJGL3") != 0
+            && wcscmp(class_name, L"GLFW30") != 0) {
         return;
     }
-    PostMessageA(window, (UINT)message, 0,
+    GetCursorPos(&point);
+    ScreenToClient(window, &point);
+    wparam = message == WM_LBUTTONDOWN || message == WM_RBUTTONDOWN
+            || message == WM_MBUTTONDOWN ? (WPARAM)button_mask : 0;
+    PostMessageW(window, (UINT)message, wparam,
             MAKELPARAM((WORD)point.x, (WORD)point.y));
 }
 
@@ -278,19 +695,14 @@ static jbyteArray JNICALL native_gcb(JNIEnv *env, jclass bridge, jclass target) 
         g_capture_bytes = NULL;
     }
     g_capture_length = 0;
+    g_capture_class_name_matched = 0;
     g_capture_class = (jclass)(*env)->NewGlobalRef(env, target);
     if (g_capture_class == NULL) {
         ReleaseSRWLockExclusive(&g_capture_lock);
         return NULL;
     }
 
-    error = (*g_jvmti)->SetEventNotificationMode(g_jvmti, JVMTI_ENABLE,
-            JVMTI_EVENT_CLASS_FILE_LOAD_HOOK, NULL);
-    if (error == JVMTI_ERROR_NONE) {
-        error = (*g_jvmti)->RetransformClasses(g_jvmti, 1, &target);
-        (*g_jvmti)->SetEventNotificationMode(g_jvmti, JVMTI_DISABLE,
-                JVMTI_EVENT_CLASS_FILE_LOAD_HOOK, NULL);
-    }
+    error = (*g_jvmti)->RetransformClasses(g_jvmti, 1, &target);
     if (error == JVMTI_ERROR_NONE && g_capture_bytes != NULL
             && g_capture_length > 0) {
         result = (*env)->NewByteArray(env, g_capture_length);
@@ -310,6 +722,7 @@ static jbyteArray JNICALL native_gcb(JNIEnv *env, jclass bridge, jclass target) 
         g_capture_bytes = NULL;
     }
     g_capture_length = 0;
+    g_capture_class_name_matched = 0;
     ReleaseSRWLockExclusive(&g_capture_lock);
     return result;
 }
@@ -860,21 +1273,14 @@ static void JNICALL native_sce(JNIEnv *env, jclass bridge, jstring message) {
     const char *chars;
     (void)bridge;
     if (message == NULL) {
-        vape_log(L"<null>");
+        vape_log(L"client error report: <null>");
         return;
     }
     chars = (*env)->GetStringUTFChars(env, message, NULL);
     if (chars != NULL) {
-        vape_log(L"%hs", chars);
+        vape_log(L"client error report: %hs", chars);
         (*env)->ReleaseStringUTFChars(env, message, chars);
     }
-}
-
-static void JNICALL native_inject_ready(JNIEnv *env, jclass bridge) {
-    (void)env;
-    (void)bridge;
-    vape_loader_signal_injection_event(1);
-    vape_log(L"Minecraft world detected; injection is ready");
 }
 
 static void JNICALL native_ss(JNIEnv *env, jclass bridge, jstring value) {
@@ -914,6 +1320,23 @@ static jint JNICALL native_dsv2(
     return 0;
 }
 
+static jstring JNICALL bridge_gat(JNIEnv *env, jclass bridge) {
+    const char *token;
+    (void)bridge;
+    if (!vape_loader_bootstrap_initialize()
+            || vape_loader_bootstrap_failed()) {
+        jclass exception_class = (*env)->FindClass(env,
+                "java/lang/IllegalStateException");
+        if (exception_class != NULL) {
+            (*env)->ThrowNew(env, exception_class,
+                    "Loader token bootstrap failed");
+        }
+        return NULL;
+    }
+    token = vape_loader_access_token();
+    return (*env)->NewStringUTF(env, token);
+}
+
 jint vape_register_native_bridge(JNIEnv *env, jclass bridge_class) {
     JNINativeMethod methods[] = {
         {"scb", "(Ljava/lang/Class;[B)I", (void *)native_scb},
@@ -927,13 +1350,13 @@ jint vape_register_native_bridge(JNIEnv *env, jclass bridge_class) {
         {"trs", "(I)V", (void *)native_trs},
         {"inv", "(Ljava/lang/reflect/Method;Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;",
                 (void *)native_inv},
+        {"gat", "()Ljava/lang/String;", (void *)bridge_gat},
         /* sample-unimplemented natives, stubbed for test robustness */
         {"dsv2", "(ILjava/lang/String;DDIF)I", (void *)native_dsv2},
         {"ss_2", "(Ljava/lang/String;)I", (void *)native_ss_2},
         {"mfv2", "(IILjava/lang/String;)I", (void *)native_mfv2},
         {"ss", "(Ljava/lang/String;)V", (void *)native_ss},
         {"sce", "(Ljava/lang/String;)V", (void *)native_sce}
-        ,{"injectReady", "()V", (void *)native_inject_ready}
     };
     jint result;
     if (env == NULL || bridge_class == NULL) {
@@ -955,11 +1378,17 @@ jint vape_register_native_bridge(JNIEnv *env, jclass bridge_class) {
         vape_log_pending_exception(env, L"resolve NativeBridge input callbacks");
         return JNI_ERR;
     }
-    vape_log(L"registered NativeBridge methods (offline bridge + safe stubs)");
+    vape_log(L"registered NativeBridge methods (9 sample + gat + cpy + 5 stub)");
     return JNI_OK;
 }
 
 void vape_release_native_bridge(JNIEnv *env) {
+    if (g_jvmti != NULL) {
+        (*g_jvmti)->SetEventNotificationMode(g_jvmti, JVMTI_DISABLE,
+                JVMTI_EVENT_CLASS_FILE_LOAD_HOOK, NULL);
+    }
+    clear_persisted_classes(env);
+    InterlockedExchange(&g_retain_class_transforms, 0);
     if (g_lwjgl3_window != NULL && g_lwjgl3_original_wndproc != NULL
             && IsWindow(g_lwjgl3_window)) {
         SetWindowLongPtrW(g_lwjgl3_window, GWLP_WNDPROC,
