@@ -25,7 +25,10 @@ extends ExprEditor {
     @Override
     public void edit(MethodCall methodCall) throws CannotCompileException {
         if (methodCall.getMethodName().equals(this.M.getResolvedName()) && methodCall.getSignature().equals(this.M.getDescriptor())) {
-            methodCall.replace(this.f);
+            try {
+                methodCall.replace(this.f);
+            } catch (CannotCompileException e) {
+            }
         }
     }
 }

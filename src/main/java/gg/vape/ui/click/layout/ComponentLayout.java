@@ -307,7 +307,9 @@ implements LayoutManager {
     @Override
     public List<GuiComponent> c() {
         if (this.s) {
-            this.k = ImmutableList.copyOf(this.w.keySet());
+            java.util.List<GuiComponent> filtered = new java.util.ArrayList<>();
+            for (GuiComponent c : this.w.keySet()) if (c != null) filtered.add(c);
+            this.k = ImmutableList.copyOf(filtered);
             this.s = false;
         }
         return this.k;

@@ -19,6 +19,7 @@ extends Event {
 
     public EventScoreboardObjectiveRender(Object objectiveOrMatrixStackHandle, Object objectiveOrRenderContextHandle) {
         ScoreboardHudModule scoreboardHudModule = Vape.INSTANCE.getModManager().getMod(ScoreboardHudModule.class);
+        if (scoreboardHudModule == null) return;
         if (ForgeVersion.MC_1_16_5.d()) {
             scoreboardHudModule.updateObjective(new ScoreObjective(objectiveOrRenderContextHandle));
         } else {
@@ -28,6 +29,7 @@ extends Event {
 
     public EventScoreboardObjectiveRender(Object objectiveHandle, int x, int y, Object scoreboardHandle) {
         ScoreboardHudModule scoreboardHudModule = Vape.INSTANCE.getModManager().getMod(ScoreboardHudModule.class);
+        if (scoreboardHudModule == null) return;
         scoreboardHudModule.updateObjective(new ScoreObjective(objectiveHandle));
     }
 
@@ -38,6 +40,7 @@ extends Event {
     @Override
     public boolean fire() {
         ScoreboardHudModule scoreboardHudModule = Vape.INSTANCE.getModManager().getMod(ScoreboardHudModule.class);
+        if (scoreboardHudModule == null) return super.fire();
         this.setCancelled(scoreboardHudModule.boolean_r());
         return super.fire();
     }

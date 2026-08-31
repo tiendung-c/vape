@@ -14,12 +14,25 @@ extends Event {
     private static final EventListeners EVENT_LISTENERS = new EventListeners();
     private static int displayHeight;
     private static int displayWidth;
+    private static volatile boolean createCalledThisFrame;
 
     public static EventListeners getEventListeners() {
         return EVENT_LISTENERS;
     }
 
+    public static boolean wasCreatedThisFrame() {
+        return createCalledThisFrame;
+    }
+
+    public static void resetCreatedThisFrame() {
+        createCalledThisFrame = false;
+    }
+
     public static void create() {
+        if (createCalledThisFrame) {
+            return;
+        }
+        createCalledThisFrame = true;
         if (ForgeVersion.MC_1_17.d() && Minecraft.thePlayer().isNull()) {
             return;
         }

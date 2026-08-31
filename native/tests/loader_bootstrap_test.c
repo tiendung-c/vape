@@ -35,7 +35,11 @@ static int expect_line(SOCKET socket_value, const char *expected) {
 static DWORD WINAPI serve_controller(LPVOID parameter) {
     TestServer *server = (TestServer *)parameter;
     SOCKET client = accept(server->listener, NULL, NULL);
+    const char token[] = "persistent-test-token\n";
     if (client != INVALID_SOCKET
+            && expect_line(client, "617")
+            && expect_line(client, "200")
+            && send(client, token, (int)strlen(token), 0) == strlen(token)
             && expect_line(client, "604")
             && expect_line(client, "23")
             && expect_line(client, "200")
@@ -51,12 +55,10 @@ int main(int argc, char **argv) {
     DWORD process_id = GetCurrentProcessId();
     wchar_t mapping_name[96];
     wchar_t ack_name[96];
-    wchar_t completion_name[96];
     HANDLE mapping = NULL;
     HANDLE ack = NULL;
-    HANDLE completion = NULL;
     HANDLE server_thread = NULL;
-    Vape421BootstrapV3 *block = NULL;
+    Vape421BootstrapV2 *block = NULL;
     TestServer server = {INVALID_SOCKET, 0};
     WSADATA winsock_data;
     struct sockaddr_in address;
@@ -66,8 +68,9 @@ int main(int argc, char **argv) {
     int result = 1;
 
     if (argc > 1 && strcmp(argv[1], "standalone") == 0) {
-        if (!vape_loader_bootstrap_initialize()) {
-            fprintf(stderr, "standalone offline bootstrap failed\n");
+        if (!vape_loader_bootstrap_initialize()
+                || strcmp(vape_loader_access_token(), "0") != 0) {
+            fprintf(stderr, "standalone bootstrap did not return sentinel token\n");
             return 1;
         }
         vape_loader_bootstrap_clear();
@@ -98,15 +101,12 @@ int main(int argc, char **argv) {
             _TRUNCATE, L"Local\\Vape421.Bootstrap.%lu", process_id);
     _snwprintf_s(ack_name, sizeof(ack_name) / sizeof(ack_name[0]),
             _TRUNCATE, L"Local\\Vape421.BootstrapAck.%lu", process_id);
-    _snwprintf_s(completion_name, sizeof(completion_name) / sizeof(completion_name[0]),
-            _TRUNCATE, L"Local\\Vape421.InjectComplete.%lu", process_id);
     mapping = CreateFileMappingW(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
             0, sizeof(*block), mapping_name);
     ack = CreateEventW(NULL, TRUE, FALSE, ack_name);
-    completion = CreateEventW(NULL, TRUE, FALSE, completion_name);
-    block = mapping == NULL ? NULL : (Vape421BootstrapV3 *)MapViewOfFile(
+    block = mapping == NULL ? NULL : (Vape421BootstrapV2 *)MapViewOfFile(
             mapping, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(*block));
-    if (mapping == NULL || ack == NULL || completion == NULL || block == NULL) {
+    if (mapping == NULL || ack == NULL || block == NULL) {
         fprintf(stderr, "failed to create bootstrap test objects\n");
         goto cleanup;
     }
@@ -116,7 +116,13 @@ int main(int argc, char **argv) {
     block->version = VAPE421_BOOTSTRAP_VERSION;
     block->structure_size = (uint16_t)sizeof(*block);
     block->target_pid = process_id;
+    block->mode = VAPE421_BOOTSTRAP_MODE_ONLINE;
     block->controller_port = invalid ? 1 : ntohs(address.sin_port);
+    strcpy_s(block->service_http_base, sizeof(block->service_http_base),
+            "http://127.0.0.1:8080");
+    strcpy_s(block->service_zeus_host, sizeof(block->service_zeus_host),
+            "127.0.0.1");
+    block->service_zeus_port = 8091;
     block->status = VAPE421_BOOTSTRAP_STATUS_CREATED;
 
     if (invalid) {
@@ -130,14 +136,13 @@ int main(int argc, char **argv) {
         if (!vape_loader_bootstrap_initialize()
                 || WaitForSingleObject(ack, 1000) != WAIT_OBJECT_0
                 || block->status != VAPE421_BOOTSTRAP_STATUS_CONSUMED
-                ) {
-            fprintf(stderr, "offline socket bootstrap failed\n");
+                || strcmp(vape_loader_access_token(), "persistent-test-token") != 0) {
+            fprintf(stderr, "socket token bootstrap failed\n");
             goto cleanup;
         }
         vape_loader_report_progress(23);
         vape_loader_report_completed();
-        if (WaitForSingleObject(completion, 1000) != WAIT_OBJECT_0
-                || WaitForSingleObject(server_thread, 1000) != WAIT_OBJECT_0
+        if (WaitForSingleObject(server_thread, 1000) != WAIT_OBJECT_0
                 || InterlockedCompareExchange(&server.succeeded, 0, 0) == 0) {
             fprintf(stderr, "progress protocol sequence failed\n");
             goto cleanup;
@@ -152,7 +157,6 @@ cleanup:
         UnmapViewOfFile(block);
     }
     if (ack != NULL) CloseHandle(ack);
-    if (completion != NULL) CloseHandle(completion);
     if (mapping != NULL) CloseHandle(mapping);
     if (server.listener != INVALID_SOCKET) closesocket(server.listener);
     if (server_thread != NULL) {

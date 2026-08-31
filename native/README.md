@@ -1,88 +1,133 @@
-# Native injector và DLL bridge — Vape 4.21 Offline
+# Vape 4.21 native test bridge
 
-Thư mục này chứa phần native dùng để đóng gói payload Java, nạp DLL vào JVM Minecraft và nối Java với JNI/JVMTI. Đây là tài liệu native rút gọn; tài liệu đầy đủ nằm ở README tại thư mục gốc.
+This directory contains an x64 Windows JNI/JVMTI bridge reconstructed from
+the nine-method `RegisterNatives` table in `sample.dll`. It supports isolated
+Minecraft 1.7.10 Forge/Vanilla, 1.8.9 Forge/Vanilla, 1.12.2
+Forge/Vanilla, 1.21.11 Forge/Vanilla/Fabric, and 26.2 Forge/Vanilla/Fabric test
+instances, including Forge-enabled Lunar Client
+injection. Minecraft 1.21.11 and 26.2 Fabric target Fabric Loader 0.19.3; other Fabric
+versions are outside the current support scope.
+Minecraft 1.16.5 support is incomplete and may have mapping, rendering, and
+module compatibility problems.
 
-## Thành phần
+Badlion Client 1.8.9 can rerun its runtime transformer after a JVMTI class
+redefinition. During JVMTI initialization, the bridge identifies that runtime
+from the loaded `ave` Minecraft class and `net/badlion` classes. It then
+retains successful class definitions containing `gg/vape` callbacks and
+supplies them again from the final `ClassFileLoadHook` when the same class is
+retransformed. Redefining a class with callback-free original bytecode removes
+its retained definition, so normal rollback still works. `trs(int)` remains
+dedicated to loader progress reporting and window integration.
 
-- `injector.c`: tìm `java.exe`/`javaw.exe`, nhận diện JVM Minecraft, chọn PID và gọi `LoadLibraryW` trong tiến trình đích.
-- `dllmain.c`: entry point của DLL, tạo worker thread và khởi động JVM bootstrap.
-- `loader_bootstrap.c/.h`: trạng thái progress, completion và failure nội bộ.
-- `native_bridge.c`: đăng ký native method, JNI/JVMTI bridge, class transform và log native.
-- `payload.rc.in`: nhúng injection JAR vào resource `RCDATA` của DLL.
-- `CMakeLists.txt`: yêu cầu MSVC x64, JNI/JVMTI headers và đường dẫn JAR.
-
-## Java được nhúng vào DLL như thế nào?
-
-Java được build thành injection JAR trước. CMake nhận JAR qua `VAPE421_PRODUCT_JAR`, sau đó resource compiler nhúng JAR vào DLL với mã resource `421`. Vì vậy DLL phát hành đã chứa payload Java.
-
-Khi DLL chạy trong JVM, nó đọc resource, ghi ra:
+The authoritative bridge surface is:
 
 ```text
-%TEMP%\Vape421Recovery\vape421-product-<pid>.jar
+scb(Class, byte[]) : int
+smd(int, int) : void
+gks(int) : short
+gkn(long) : String
+mvk(int, int) : int
+gcb(Class) : byte[]
+gfb(String) : byte[]
+trs(int) : void
+inv(Method, Object, Object[]) : Object
 ```
 
-Sau đó DLL tìm JVM hiện tại bằng `JNI_GetCreatedJavaVMs`, attach thread, khởi tạo JVMTI, chọn ClassLoader Minecraft, load `gg.vape.runtime.NativeBridge` và gọi `NativeBridge.start()`.
+The additional native declarations currently present in the recovered Java
+class are not registered by `sample.dll`, and the PE has no export table or
+second registration path. They are intentionally not invented here.
 
-## Luồng injector
+## Loader token handoff design difference
 
-1. Tự động liệt kê `java.exe` và `javaw.exe`.
-2. Đọc command line/metadata để chấm điểm dấu hiệu Minecraft, Badlion, Lunar, Forge hoặc LaunchWrapper.
-3. Chọn PID duy nhất hoặc hiển thị danh sách khi có nhiều JVM.
-4. Mở process, cấp vùng nhớ, ghi đường dẫn DLL.
-5. Dùng `kernel32!LoadLibraryW` qua remote thread để nạp DLL.
-6. Chờ tối đa 30 giây cho DLL được map.
-7. Chờ tối đa 5 phút cho Java bootstrap báo thành công/thất bại.
+The local-service integration deliberately adds `gat()Ljava/lang/String;`
+as a Product compatibility native while keeping its Java-visible name exactly
+`gat`. It does not add a `native_gat()` Java method and does not change the
+existing Java online, Zeus, friend, Party, or settings-sync implementations.
+This tenth registration is not part of the nine-method `sample.dll` authority;
+the legacy official DLL provides separate evidence for native `gat()`, but its
+implementation used controller command `0x269` over a persistent EXE socket.
 
-Console chỉ báo injection hoàn tất khi nhận được trạng thái Java tương ứng, không chỉ dựa vào việc remote thread đã kết thúc. Cơ chế này là Win32/JNI/JVMTI tiêu chuẩn; native code không triển khai stealth injection hoặc bypass anti-cheat.
+The Product design has two explicit launch modes:
+
+- Direct `Vape421Injector.exe` injection has no Loader bootstrap, so native
+  `gat()` returns the string `"0"`.
+- Loader startup obtains a long-lived token from the loopback Service by
+  username and exposes it to `Vape421Native.dll` through the temporary
+  loopback controller socket. The DLL requests it with command `0x269`, caches
+  it for `gat()`, reports `trs(step)` with `0x25c`, and reports completion with
+  `0x25e`. The Loader remains open through the Finished Loading page.
+
+The Service does not create a token-`"0"` developer account, performs no HWID
+check, and reuses the existing long-lived token for a case-insensitive username
+match. Because current Java initialization uses `gat()` for
+`/api/v1/{token}/authenticated`, direct mode is only guaranteed to return the
+standalone sentinel `"0"`; without changes to Java initialization it may stop
+when that token is rejected or the Service is absent.
+
+The versioned named-memory block is created before DLL injection and carries
+only the controller port and Service endpoints; it never contains the token.
+The token and loading state use the decomp-supported controller commands over
+loopback. The full design is documented at
+`../../native_method_research/loader_product_token_handoff_design.md`.
 
 ## Build
 
-Chạy tại thư mục gốc:
+Use Gradle 8.8 from `product` to build the Java 8 payload, embed all remotely
+managed runtime dependencies, compile the native targets, and assemble the
+bundle:
 
 ```powershell
-.\gradlew.bat prepareInjectionBundle `
-  -PtargetRelease=8 `
-  -PnativeJavaHome="C:\Program Files\Java\jdk1.8.0_202" `
-  --no-daemon
+.\gradlew.bat prepareInjectionBundle -PtargetRelease=8 `
+  -PnativeJavaHome="C:\Program Files\Java\jdk1.8.0_301"
 ```
 
-Bundle cuối cùng:
+For native-only development, invoke CMake directly with the injection JAR:
 
-```text
-build\injection\Vape421Injector.exe
-build\injection\Vape421Native.dll
-build\injection\README.md
+```powershell
+cmake -S . -B build -A x64 `
+  -DVAPE421_JAVA_HOME="C:\Program Files\Java\jdk1.8.0_301" `
+  -DVAPE421_PRODUCT_JAR="..\build\libs\vape421-product-recovery-4.21-recovered-injection.jar"
+cmake --build build --config Release
 ```
 
-## Tải bản phát hành
+Outputs are written to `build/dist`:
 
-Khi tải từ [GitHub Releases](https://github.com/tiendung-c/vape-source/releases), bắt buộc tải đủ hai asset:
+- `Vape421Native.dll`
+- `Vape421Injector.exe`
 
-```text
+## Direct injection
+
+`Vape421Native.dll` contains the recovered Java product as an `RCDATA`
+resource. Start a supported Minecraft instance (including Minecraft 1.21.11
+or 26.2 Fabric), or a Forge-enabled Lunar Client instance, with a 64-bit JVM,
+then run the injector from the bundle directory:
+
+```powershell
 Vape421Injector.exe
-Vape421Native.dll
 ```
 
-Đặt EXE và DLL cạnh nhau trong cùng một thư mục rồi chạy `Vape421Injector.exe`. Chỉ có một trong hai file sẽ không đủ để inject.
-
-## Kiểm thử
+The injector refreshes its list of visible `java.exe` and `javaw.exe` windows
+every 750 ms and displays their window titles (for example, `Minecraft` or
+`Lunar Client`). Select a process with Up/Down and press Enter to inject;
+press Esc to quit. If the DLL is elsewhere, pass its path as the only
+argument. The original non-interactive form remains available for scripts:
 
 ```powershell
-ctest --test-dir build/native -C Release --output-on-failure
+Vape421Injector.exe <pid> Vape421Native.dll
 ```
 
-## Log bootstrap
+The injector only performs `LoadLibraryW`. Once loaded, the DLL worker waits
+for the JVM and Minecraft `Client thread`, materializes its embedded product
+JAR into the process temp directory, and loads it through the context
+ClassLoader. On Fabric, the worker uses the Fabric Launcher API to add the JAR
+to the Knot target ClassLoader so transformed game classes and payload callbacks
+share one class identity. It then
+registers the nine authoritative methods plus the Product `gat()` compatibility
+native, and calls
+`NativeBridge.start()` automatically. No second command or start flag is
+required. Inspect `vape421-native.log` beside the DLL for the exact result.
 
-```text
-BOOT DETECT_RUNTIME
-BOOT LOAD_MAPPINGS
-BOOT INIT_ACCOUNT_OFFLINE
-BOOT INIT_MANAGERS
-BOOT JAVA_READY_WAITING_FOR_WORLD
-NativeBridge.start completed; injection is active
-Minecraft world detected; injection is ready
-```
-
-`BOOT INIT_ACCOUNT_OFFLINE` xác nhận phần account không gọi dịch vụ đăng nhập online. Profile/settings được Java lưu ở `%APPDATA%\Vape` dưới dạng JSON, không do native layer quản lý.
-
-Nếu không thể ghi đè file trong `build\injection`, hãy đóng `Vape421Injector.exe` và Minecraft đang giữ DLL rồi chạy lại task build.
+The injection payload is compiled with `--release 8`; its project classes use
+class-file major version 52. Runtime dependencies are resolved from the
+repositories declared in Gradle and merged into that payload, not restored as
+vendored source directories. The injector rejects non-x64 processes.

@@ -123,7 +123,7 @@ public class AltManagerFrame extends Frame {
     }
 
     private void refreshList() {
-        listContainer.f().clear();
+        listContainer.t$src$V$zbu1jn();
         List<AltAccount> accounts = AltManager.getInstance().getAccountsUnsafe();
         // we need to access underlying list via synchronized copy; we use unsafe for display but ensure sync
         synchronized (accounts) {

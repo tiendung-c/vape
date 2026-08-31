@@ -424,7 +424,7 @@ public class AutoMace extends Mod {
         simulation.applySnapshot(this.movementSnapshot);
         simulation.restoreSnapshotInput();
         EntityPlayer simulatedPlayer = simulation.getSimulatedPlayer();
-        float fallDistance = player.getFallDistance();
+        float fallDistance = 0.0f;
         double previousY = simulatedPlayer.N();
         boolean glideEnded = !startsFallFlying;
         for (int tick = 1; tick <= PREDICTION_TICKS; ++tick) {
@@ -913,10 +913,10 @@ public class AutoMace extends Mod {
         }
         double score = -1.0;
         if (density > 0) {
-            score = this.estimateMaceDamage(player.getFallDistance(), target, density, 0);
+            score = this.estimateMaceDamage(0.0f, target, density, 0);
         }
         if (breach > 0) {
-            score = Math.max(score, this.estimateMaceDamage(player.getFallDistance(), target, 0, breach));
+            score = Math.max(score, this.estimateMaceDamage(0.0f, target, 0, breach));
         }
         return score;
     }

@@ -137,6 +137,7 @@ extends AbstractListValueComponent {
     private String buildEntrySummary(SmoothFontRenderer fontRenderer, double maximumWidth) {
         StringBuilder summary = new StringBuilder();
         for (Object entry : (List)this.listValue.getValue()) {
+            if (entry == null) continue;
             if (entry instanceof ToggleableListEntry && !((ToggleableListEntry)entry).isEnabled()) continue;
             if (summary.length() < 1) {
                 summary.append(entry.toString());

@@ -10,14 +10,6 @@ static volatile LONG g_loaded_by_jni = 0;
 
 #define VAPE421_PRODUCT_JAR_RESOURCE_ID 421
 
-enum {
-    VAPE421_BOOT_PROGRESS_JVM = 10,
-    VAPE421_BOOT_PROGRESS_JVMTI = 20,
-    VAPE421_BOOT_PROGRESS_CLASSLOADER = 30,
-    VAPE421_BOOT_PROGRESS_PAYLOAD = 40,
-    VAPE421_BOOT_PROGRESS_JAVA = 50
-};
-
 static int module_directory(wchar_t *output, size_t capacity) {
     DWORD length;
     wchar_t *separator;
@@ -39,8 +31,10 @@ static int module_directory(wchar_t *output, size_t capacity) {
 void vape_log(const wchar_t *format, ...) {
     wchar_t message[2048];
     wchar_t line[2304];
-    char utf8_line[8192];
+    wchar_t directory[MAX_PATH];
+    wchar_t log_path[MAX_PATH];
     SYSTEMTIME now;
+    FILE *file = NULL;
     va_list arguments;
 
     va_start(arguments, format);
@@ -53,9 +47,15 @@ void vape_log(const wchar_t *format, ...) {
             now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute,
             now.wSecond, now.wMilliseconds, message);
     OutputDebugStringW(line);
-    if (WideCharToMultiByte(CP_UTF8, 0, line, -1, utf8_line,
-            (int)(sizeof(utf8_line)), NULL, NULL) > 0) {
-        vape_loader_report_log(utf8_line);
+
+    if (!module_directory(directory, sizeof(directory) / sizeof(directory[0]))) {
+        return;
+    }
+    _snwprintf_s(log_path, sizeof(log_path) / sizeof(log_path[0]), _TRUNCATE,
+            L"%ls\\vape421-native.log", directory);
+    if (_wfopen_s(&file, log_path, L"a, ccs=UTF-8") == 0 && file != NULL) {
+        fputws(line, file);
+        fclose(file);
     }
 }
 
@@ -185,106 +185,12 @@ cleanup:
     return result;
 }
 
-static int class_loader_can_load_minecraft(JNIEnv *env, jobject loader) {
-    static const char *anchors[] = {
-        "net.minecraft.client.Minecraft",
-        "net.minecraft.client.MinecraftClient",
-        "net.minecraft.client.main.Main"
-    };
-    jclass loader_class;
-    jmethodID load_class;
-    size_t index;
-
-    if (env == NULL || loader == NULL) {
-        return 0;
-    }
-    loader_class = (*env)->FindClass(env, "java/lang/ClassLoader");
-    if (loader_class == NULL) {
-        if ((*env)->ExceptionCheck(env)) {
-            (*env)->ExceptionClear(env);
-        }
-        return 0;
-    }
-    load_class = (*env)->GetMethodID(env, loader_class, "loadClass",
-            "(Ljava/lang/String;)Ljava/lang/Class;");
-    if (load_class == NULL) {
-        if ((*env)->ExceptionCheck(env)) {
-            (*env)->ExceptionClear(env);
-        }
-        (*env)->DeleteLocalRef(env, loader_class);
-        return 0;
-    }
-    for (index = 0; index < sizeof(anchors) / sizeof(anchors[0]); ++index) {
-        jstring name = (*env)->NewStringUTF(env, anchors[index]);
-        jobject loaded;
-        if (name == NULL) {
-            if ((*env)->ExceptionCheck(env)) {
-                (*env)->ExceptionClear(env);
-            }
-            continue;
-        }
-        loaded = (*env)->CallObjectMethod(env, loader, load_class, name);
-        (*env)->DeleteLocalRef(env, name);
-        if (loaded != NULL && !(*env)->ExceptionCheck(env)) {
-            (*env)->DeleteLocalRef(env, loaded);
-            (*env)->DeleteLocalRef(env, loader_class);
-            return 1;
-        }
-        if ((*env)->ExceptionCheck(env)) {
-            (*env)->ExceptionClear(env);
-        }
-        if (loaded != NULL) {
-            (*env)->DeleteLocalRef(env, loaded);
-        }
-    }
-    (*env)->DeleteLocalRef(env, loader_class);
-    return 0;
-}
-
-static void diagnose_loaded_minecraft_classes(void) {
-    jint class_count = 0;
-    jclass *classes = NULL;
-    jint index;
-    int matches = 0;
-    if (g_jvmti == NULL
-            || (*g_jvmti)->GetLoadedClasses(g_jvmti, &class_count, &classes)
-                    != JVMTI_ERROR_NONE
-            || classes == NULL) {
-        return;
-    }
-    for (index = 0; index < class_count; ++index) {
-        char *signature = NULL;
-        if ((*g_jvmti)->GetClassSignature(g_jvmti, classes[index],
-                &signature, NULL) != JVMTI_ERROR_NONE || signature == NULL) {
-            continue;
-        }
-        if (strstr(signature, "EnumFacing") != NULL
-                || strstr(signature, "net/minecraft/util/") != NULL) {
-            if (matches < 64) {
-                vape_log(L"loaded Minecraft utility class: %hs", signature);
-            }
-            ++matches;
-        }
-        (*g_jvmti)->Deallocate(g_jvmti, (unsigned char *)signature);
-    }
-    vape_log(L"loaded Minecraft utility class matches: %d", matches);
-    (*g_jvmti)->Deallocate(g_jvmti, (unsigned char *)classes);
-}
-
-static int preferred_client_thread(const char *name) {
-    return name != NULL
-            && (strcmp(name, "Client thread") == 0
-                    || strcmp(name, "Render thread") == 0
-                    || strcmp(name, "Main thread") == 0);
-}
-
 static jobject find_client_class_loader(JNIEnv *env) {
     jint thread_count = 0;
     jthread *threads = NULL;
     jobject result = NULL;
     jvmtiError error;
     jint index;
-    int best_score = -1;
     if (g_jvmti == NULL) {
         return NULL;
     }
@@ -298,23 +204,11 @@ static jobject find_client_class_loader(JNIEnv *env) {
         memset(&info, 0, sizeof(info));
         if ((*g_jvmti)->GetThreadInfo(g_jvmti, threads[index], &info)
                 == JVMTI_ERROR_NONE) {
-            if (info.context_class_loader != NULL) {
-                int score = 1;
-                if (preferred_client_thread(info.name)) {
-                    score += 4;
-                }
-                if (class_loader_can_load_minecraft(env,
-                        info.context_class_loader)) {
-                    score += 8;
-                }
-                if (score > best_score) {
-                    if (result != NULL) {
-                        (*env)->DeleteLocalRef(env, result);
-                    }
-                    result = (*env)->NewLocalRef(env,
-                            info.context_class_loader);
-                    best_score = result == NULL ? best_score : score;
-                }
+            if (info.name != NULL
+                    && (strcmp(info.name, "Client thread") == 0
+                            || strcmp(info.name, "Render thread") == 0)
+                    && info.context_class_loader != NULL) {
+                result = (*env)->NewLocalRef(env, info.context_class_loader);
             }
             if (info.name != NULL) {
                 (*g_jvmti)->Deallocate(g_jvmti, (unsigned char *)info.name);
@@ -327,36 +221,249 @@ static jobject find_client_class_loader(JNIEnv *env) {
             }
         }
         (*env)->DeleteLocalRef(env, threads[index]);
+        if (result != NULL) {
+            break;
+        }
     }
     (*g_jvmti)->Deallocate(g_jvmti, (unsigned char *)threads);
-
-    if (result == NULL) {
-        jclass loader_class = (*env)->FindClass(env, "java/lang/ClassLoader");
-        jmethodID system_loader = loader_class == NULL ? NULL
-                : (*env)->GetStaticMethodID(env, loader_class,
-                        "getSystemClassLoader", "()Ljava/lang/ClassLoader;");
-        if (system_loader != NULL) {
-            result = (*env)->CallStaticObjectMethod(env, loader_class,
-                    system_loader);
-            if ((*env)->ExceptionCheck(env)) {
-                (*env)->ExceptionClear(env);
-                result = NULL;
-            }
-        } else if ((*env)->ExceptionCheck(env)) {
-            (*env)->ExceptionClear(env);
-        }
-        if (loader_class != NULL) {
-            (*env)->DeleteLocalRef(env, loader_class);
-        }
-    }
-    vape_log(L"selected Minecraft ClassLoader with score %d", best_score);
     return result;
 }
 
 /*
- * Fabric defines game classes in its Knot target ClassLoader. Installing the
- * payload in a child loader would give transformed game classes a different
- * class identity, so use Fabric's runtime classpath API instead.
+ * ModLauncher 10.2+ defines game classes in ModuleClassLoader, which cannot
+ * see an ordinary child URLClassLoader. Add only the product packages to its
+ * package routing table so transformed game classes and the bootstrap use the
+ * same gg.vape class identities without replacing Forge's global fallback.
+ *
+ * Returns 1 when installed, 0 when the loader is not modular, and -1
+ * when a compatible loader was detected but setup failed.
+ */
+static int install_modular_payload_loader(
+        JNIEnv *env, jobject *loader, jclass url_loader_class,
+        jclass url_class, jobject url) {
+    jclass runtime_loader_class;
+    jclass loader_class;
+    jclass payload_loader_class;
+    jclass target_event_class;
+    jclass payload_event_class;
+    jfieldID package_routes_field;
+    jmethodID url_loader_init;
+    jmethodID load_class;
+    jmethodID payload_loader_init;
+    jmethodID build_package_routes;
+    jmethodID modular_loader_marker;
+    jobjectArray urls;
+    jobject bootstrap_loader;
+    jobject payload_loader;
+    jobject previous_package_routes;
+    jobject package_routes;
+    jstring payload_loader_name;
+    jstring target_event_name;
+
+    runtime_loader_class = (*env)->GetObjectClass(env, *loader);
+    if (runtime_loader_class == NULL) {
+        vape_log_pending_exception(env, L"resolve runtime ClassLoader type");
+        return -1;
+    }
+    package_routes_field = (*env)->GetFieldID(env, runtime_loader_class,
+            "packageToParentLoader", "Ljava/util/Map;");
+    if (package_routes_field == NULL) {
+        if ((*env)->ExceptionCheck(env)) {
+            (*env)->ExceptionClear(env);
+        }
+        modular_loader_marker = (*env)->GetMethodID(env, runtime_loader_class,
+                "setFallbackClassLoader", "(Ljava/lang/ClassLoader;)V");
+        if (modular_loader_marker != NULL) {
+            vape_log(L"ModLauncher package routing field is unavailable");
+            return -1;
+        }
+        if ((*env)->ExceptionCheck(env)) {
+            (*env)->ExceptionClear(env);
+        }
+        return 0;
+    }
+
+    loader_class = (*env)->FindClass(env, "java/lang/ClassLoader");
+    url_loader_init = (*env)->GetMethodID(env, url_loader_class, "<init>",
+            "([Ljava/net/URL;Ljava/lang/ClassLoader;)V");
+    load_class = loader_class == NULL ? NULL : (*env)->GetMethodID(
+            env, loader_class, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;");
+    urls = (*env)->NewObjectArray(env, 1, url_class, NULL);
+    if (loader_class == NULL || url_loader_init == NULL
+            || load_class == NULL || urls == NULL) {
+        vape_log_pending_exception(env,
+                L"resolve modular payload ClassLoader methods");
+        return -1;
+    }
+    (*env)->SetObjectArrayElement(env, urls, 0, url);
+
+    /* Load the custom ClassLoader type before installing package routes. */
+    bootstrap_loader = (*env)->NewObject(env, url_loader_class,
+            url_loader_init, urls, *loader);
+    payload_loader_name = (*env)->NewStringUTF(env,
+            "gg.vape.runtime.ForgePayloadClassLoader");
+    payload_loader_class = bootstrap_loader == NULL
+            || payload_loader_name == NULL ? NULL
+            : (jclass)(*env)->CallObjectMethod(env, bootstrap_loader,
+                    load_class, payload_loader_name);
+    if (payload_loader_class == NULL || (*env)->ExceptionCheck(env)) {
+        vape_log_pending_exception(env,
+                L"load ForgePayloadClassLoader bootstrap class");
+        return -1;
+    }
+
+    payload_loader_init = (*env)->GetMethodID(env, payload_loader_class,
+            "<init>", "([Ljava/net/URL;Ljava/lang/ClassLoader;)V");
+    build_package_routes = (*env)->GetMethodID(env, payload_loader_class,
+            "buildPackageRoutingMap", "(Ljava/util/Map;)Ljava/util/Map;");
+    payload_loader = payload_loader_init == NULL ? NULL
+            : (*env)->NewObject(env, payload_loader_class,
+                    payload_loader_init, urls, *loader);
+    if (build_package_routes == NULL || payload_loader == NULL
+            || (*env)->ExceptionCheck(env)) {
+        vape_log_pending_exception(env, L"create modular payload ClassLoader");
+        return -1;
+    }
+
+    previous_package_routes = (*env)->GetObjectField(
+            env, *loader, package_routes_field);
+    package_routes = (jobject)(*env)->CallObjectMethod(env, payload_loader,
+            build_package_routes, previous_package_routes);
+    if (package_routes == NULL || (*env)->ExceptionCheck(env)) {
+        vape_log_pending_exception(env, L"build ModLauncher payload package routes");
+        return -1;
+    }
+    (*env)->SetObjectField(env, *loader, package_routes_field, package_routes);
+    if ((*env)->ExceptionCheck(env)) {
+        vape_log_pending_exception(env, L"install ModLauncher payload package routes");
+        return -1;
+    }
+
+    /* Fail before any JVMTI redefine if the exact crashing reference is hidden. */
+    target_event_name = (*env)->NewStringUTF(env,
+            "gg.vape.event.impl.EventRenderWorldPassExecutorDrain");
+    target_event_class = target_event_name == NULL ? NULL
+            : (jclass)(*env)->CallObjectMethod(env, *loader,
+                    load_class, target_event_name);
+    if (target_event_class == NULL || (*env)->ExceptionCheck(env)) {
+        vape_log_pending_exception(env,
+                L"resolve payload event from ModuleClassLoader");
+        (*env)->SetObjectField(env, *loader, package_routes_field,
+                previous_package_routes);
+        if ((*env)->ExceptionCheck(env)) {
+            vape_log_pending_exception(env,
+                    L"restore ModLauncher package routes after visibility failure");
+        }
+        return -1;
+    }
+    payload_event_class = target_event_name == NULL ? NULL
+            : (jclass)(*env)->CallObjectMethod(env, payload_loader,
+                    load_class, target_event_name);
+    if (payload_event_class == NULL || (*env)->ExceptionCheck(env)
+            || !(*env)->IsSameObject(env, target_event_class,
+                    payload_event_class)) {
+        vape_log_pending_exception(env,
+                L"verify modular payload visibility");
+        (*env)->SetObjectField(env, *loader, package_routes_field,
+                previous_package_routes);
+        if ((*env)->ExceptionCheck(env)) {
+            vape_log_pending_exception(env,
+                    L"restore ModLauncher package routes after identity failure");
+        }
+        return -1;
+    }
+
+    (*env)->DeleteLocalRef(env, *loader);
+    *loader = payload_loader;
+    vape_log(L"installed payload package routes on ModLauncher ModuleClassLoader");
+    return 1;
+}
+
+/*
+ * Java 9+ no longer implements the application ClassLoader as a
+ * URLClassLoader. A child loader can start the payload, but transformed game
+ * classes in the parent cannot resolve callbacks from that child. Append the
+ * payload to the system loader search path when it is the game's loader so
+ * both sides use the same class identity.
+ *
+ * Returns 1 when installed, 0 when the client loader is not the system loader,
+ * and -1 when the system loader was detected but setup failed.
+ */
+static int install_system_payload_search(
+        JNIEnv *env, jobject loader, const wchar_t *jar_path) {
+    jclass loader_class;
+    jmethodID get_system_loader;
+    jmethodID load_class;
+    jobject system_loader;
+    jstring event_name;
+    jstring path;
+    jclass event_class;
+    const char *segment;
+    jvmtiError error;
+
+    if (g_jvmti == NULL) {
+        vape_log(L"JVMTI is unavailable for system ClassLoader search");
+        return -1;
+    }
+    loader_class = (*env)->FindClass(env, "java/lang/ClassLoader");
+    get_system_loader = loader_class == NULL ? NULL
+            : (*env)->GetStaticMethodID(env, loader_class,
+                    "getSystemClassLoader", "()Ljava/lang/ClassLoader;");
+    load_class = loader_class == NULL ? NULL : (*env)->GetMethodID(
+            env, loader_class, "loadClass",
+            "(Ljava/lang/String;)Ljava/lang/Class;");
+    if (get_system_loader == NULL || load_class == NULL) {
+        vape_log_pending_exception(env,
+                L"resolve system ClassLoader methods");
+        return -1;
+    }
+    system_loader = (*env)->CallStaticObjectMethod(
+            env, loader_class, get_system_loader);
+    if (system_loader == NULL || (*env)->ExceptionCheck(env)) {
+        vape_log_pending_exception(env, L"ClassLoader.getSystemClassLoader");
+        return -1;
+    }
+    if (!(*env)->IsSameObject(env, loader, system_loader)) {
+        return 0;
+    }
+
+    path = new_wide_string(env, jar_path);
+    segment = path == NULL ? NULL
+            : (*env)->GetStringUTFChars(env, path, NULL);
+    if (segment == NULL || (*env)->ExceptionCheck(env)) {
+        vape_log_pending_exception(env,
+                L"convert product JAR path to modified UTF-8");
+        return -1;
+    }
+    error = (*g_jvmti)->AddToSystemClassLoaderSearch(g_jvmti, segment);
+    (*env)->ReleaseStringUTFChars(env, path, segment);
+    if (error != JVMTI_ERROR_NONE) {
+        vape_log(L"AddToSystemClassLoaderSearch failed: %d", error);
+        return -1;
+    }
+
+    event_name = (*env)->NewStringUTF(env,
+            "gg.vape.event.impl.EventRenderWorldPassExecutorDrain");
+    event_class = event_name == NULL ? NULL
+            : (jclass)(*env)->CallObjectMethod(
+                    env, loader, load_class, event_name);
+    if (event_class == NULL || (*env)->ExceptionCheck(env)) {
+        vape_log_pending_exception(env,
+                L"resolve payload event from system ClassLoader");
+        return -1;
+    }
+    vape_log(L"appended product JAR to system ClassLoader search");
+    return 1;
+}
+
+/*
+ * Fabric defines game classes in its Knot target ClassLoader.  Installing the
+ * payload in a child loader lets the bootstrap start, but transformed game
+ * classes cannot resolve callbacks from that child.  Use Fabric's own runtime
+ * classpath API so the payload and game classes share the Knot class identity.
+ *
+ * Returns 1 when installed, 0 when Fabric Loader is absent, and -1 when a
+ * Fabric runtime was detected but rejected the payload.
  */
 static int install_fabric_payload_search(
         JNIEnv *env, jobject *loader, jobject file) {
@@ -389,7 +496,8 @@ static int install_fabric_payload_search(
     launcher_base_name = (*env)->NewStringUTF(env,
             "net.fabricmc.loader.impl.launch.FabricLauncherBase");
     if (load_class == NULL || launcher_base_name == NULL) {
-        vape_log_pending_exception(env, L"resolve Fabric ClassLoader methods");
+        vape_log_pending_exception(env,
+                L"resolve Fabric ClassLoader methods");
         return -1;
     }
     launcher_base_class = (jclass)(*env)->CallObjectMethod(
@@ -476,7 +584,8 @@ static int install_fabric_payload_search(
 
     retained_target_loader = (*env)->NewLocalRef(env, target_loader);
     if (retained_target_loader == NULL) {
-        vape_log_pending_exception(env, L"retain Fabric target ClassLoader");
+        vape_log_pending_exception(env,
+                L"retain Fabric target ClassLoader");
         return -1;
     }
     (*env)->DeleteLocalRef(env, *loader);
@@ -505,12 +614,9 @@ static int add_jar_to_loader(
     jclass runtime_loader_class;
     jfieldID delegated_loader_field;
     jobject delegated_loader;
-    jfieldID fallback_loader_field;
-    jobject fallback_loader;
-    jclass class_loader_class;
-    jmethodID get_parent;
-    jobject parent_loader;
+    int modular_result;
     int fabric_result;
+    int system_result;
 
     url_loader_class = (*env)->FindClass(env, "java/net/URLClassLoader");
     url_class = (*env)->FindClass(env, "java/net/URL");
@@ -590,86 +696,15 @@ static int add_jar_to_loader(
         (*env)->ExceptionClear(env);
     }
 
-    /*
-     * Forge 1.21.x uses SecureModuleClassLoader. Its transformed game
-     * classes are loaded by the original loader, so replacing it with a
-     * child URLClassLoader makes injected event references invisible to
-     * GameRenderer and other transformed classes. SecureModuleClassLoader
-     * exposes a fallbackClassLoader specifically for classes outside its
-     * module graph; attach the product JAR there and keep the original
-     * loader as the owner of Minecraft classes.
-     */
-    fallback_loader_field = runtime_loader_class == NULL ? NULL
-            : (*env)->GetFieldID(env, runtime_loader_class,
-                    "fallbackClassLoader", "Ljava/lang/ClassLoader;");
-    if (fallback_loader_field == NULL && (*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
+    modular_result = install_modular_payload_loader(
+            env, loader, url_loader_class, url_class, url);
+    if (modular_result != 0) {
+        return modular_result > 0;
     }
-    if (fallback_loader_field != NULL) {
-        fallback_loader = (*env)->GetObjectField(
-                env, *loader, fallback_loader_field);
-        if ((*env)->ExceptionCheck(env)) {
-            (*env)->ExceptionClear(env);
-            fallback_loader = NULL;
-        }
-        if (fallback_loader != NULL
-                && (*env)->IsInstanceOf(env, fallback_loader,
-                        url_loader_class)) {
-            add_url = (*env)->GetMethodID(env, url_loader_class,
-                    "addURL", "(Ljava/net/URL;)V");
-            if (add_url == NULL) {
-                vape_log_pending_exception(env,
-                        L"resolve SecureModuleClassLoader fallback addURL");
-                return 0;
-            }
-            (*env)->CallVoidMethod(env, fallback_loader, add_url, url);
-            if ((*env)->ExceptionCheck(env)) {
-                vape_log_pending_exception(env,
-                        L"append product JAR to SecureModuleClassLoader fallback");
-                return 0;
-            }
-            vape_log(L"appended product JAR to SecureModuleClassLoader fallback");
-            return 1;
-        }
 
-        class_loader_class = (*env)->FindClass(env, "java/lang/ClassLoader");
-        get_parent = class_loader_class == NULL ? NULL : (*env)->GetMethodID(
-                env, class_loader_class, "getParent",
-                "()Ljava/lang/ClassLoader;");
-        parent_loader = NULL;
-        if (fallback_loader != NULL) {
-            parent_loader = fallback_loader;
-        } else if (get_parent != NULL) {
-            parent_loader = (*env)->CallObjectMethod(env, *loader, get_parent);
-            if ((*env)->ExceptionCheck(env)) {
-                (*env)->ExceptionClear(env);
-                parent_loader = NULL;
-            }
-        }
-        child_loader = NULL;
-        if (get_parent != NULL) {
-            url_loader_init = (*env)->GetMethodID(env, url_loader_class,
-                    "<init>", "([Ljava/net/URL;Ljava/lang/ClassLoader;)V");
-            urls = (*env)->NewObjectArray(env, 1, url_class, NULL);
-            if (url_loader_init != NULL && urls != NULL) {
-                (*env)->SetObjectArrayElement(env, urls, 0, url);
-                child_loader = (*env)->NewObject(env, url_loader_class,
-                        url_loader_init, urls, parent_loader);
-            }
-        }
-        if (child_loader == NULL || (*env)->ExceptionCheck(env)) {
-            vape_log_pending_exception(env,
-                    L"create SecureModuleClassLoader fallback URLClassLoader");
-            return 0;
-        }
-        (*env)->SetObjectField(env, *loader, fallback_loader_field, child_loader);
-        if ((*env)->ExceptionCheck(env)) {
-            vape_log_pending_exception(env,
-                    L"set SecureModuleClassLoader fallbackClassLoader");
-            return 0;
-        }
-        vape_log(L"attached product JAR through SecureModuleClassLoader fallback");
-        return 1;
+    system_result = install_system_payload_search(env, *loader, jar_path);
+    if (system_result != 0) {
+        return system_result > 0;
     }
 
     url_loader_init = (*env)->GetMethodID(env, url_loader_class, "<init>",
@@ -783,7 +818,7 @@ static DWORD WINAPI bootstrap_thread(LPVOID parameter) {
     DWORD exit_code = 1;
 
     if (!vape_loader_bootstrap_initialize()) {
-        vape_log(L"Offline bootstrap is invalid");
+        vape_log(L"Loader token bootstrap is invalid");
         exit_code = 6;
         goto cleanup;
     }
@@ -801,7 +836,6 @@ static DWORD WINAPI bootstrap_thread(LPVOID parameter) {
         exit_code = 2;
         goto cleanup;
     }
-    vape_loader_report_progress(VAPE421_BOOT_PROGRESS_JVM);
     created_vms_address = GetProcAddress(jvm_module, "JNI_GetCreatedJavaVMs");
     if (created_vms_address == NULL) {
         vape_log(L"JNI_GetCreatedJavaVMs export is unavailable");
@@ -833,7 +867,6 @@ static DWORD WINAPI bootstrap_thread(LPVOID parameter) {
     if (vape_initialize_jvmti(vm) != JNI_OK) {
         goto cleanup;
     }
-    vape_loader_report_progress(VAPE421_BOOT_PROGRESS_JVMTI);
     if (!materialize_embedded_product_jar(jar_path,
             sizeof(jar_path) / sizeof(jar_path[0]))) {
         goto cleanup;
@@ -845,11 +878,9 @@ static DWORD WINAPI bootstrap_thread(LPVOID parameter) {
         }
     }
     if (loader == NULL) {
-        vape_log(L"Minecraft ClassLoader was not found within 60 seconds");
+        vape_log(L"Minecraft client/render thread was not found within 60 seconds");
         goto cleanup;
     }
-    diagnose_loaded_minecraft_classes();
-    vape_loader_report_progress(VAPE421_BOOT_PROGRESS_CLASSLOADER);
     if (!add_jar_to_loader(env, &loader, jar_path)) {
         goto cleanup;
     }
@@ -864,7 +895,6 @@ static DWORD WINAPI bootstrap_thread(LPVOID parameter) {
         goto cleanup;
     }
     registered = 1;
-    vape_loader_report_progress(VAPE421_BOOT_PROGRESS_PAYLOAD);
     if (!pin_native_module()) {
         goto cleanup;
     }
@@ -872,7 +902,6 @@ static DWORD WINAPI bootstrap_thread(LPVOID parameter) {
     if (!call_bridge_start(env, bridge_class)) {
         goto cleanup;
     }
-    vape_loader_report_progress(VAPE421_BOOT_PROGRESS_JAVA);
     vape_loader_report_completed();
     vape_log(L"NativeBridge.start completed; injection is active");
     completed = 1;

@@ -31,39 +31,33 @@ find_path(VAPE421_JVMTI_INCLUDE jvmti.h
         HINTS "${VAPE421_JAVA_HOME}/include" REQUIRED)
 
 set(VAPE421_PRODUCT_JAR "" CACHE FILEPATH
-        "Minecraft product JAR embedded into Vape421Native.dll")
+        "Recovered product JAR embedded into Vape421Native.dll")
 if(NOT VAPE421_PRODUCT_JAR OR NOT EXISTS "${VAPE421_PRODUCT_JAR}")
     message(FATAL_ERROR
             "VAPE421_PRODUCT_JAR must name an existing recovered product JAR")
 endif()
+get_filename_component(VAPE421_PRODUCT_JAR
+        "${VAPE421_PRODUCT_JAR}" ABSOLUTE)
+file(TO_CMAKE_PATH "${VAPE421_PRODUCT_JAR}" VAPE421_PRODUCT_JAR_RC_PATH)
+configure_file(payload.rc.in generated/payload.rc @ONLY)
+set_property(SOURCE "${CMAKE_CURRENT_BINARY_DIR}/generated/payload.rc"
+        APPEND PROPERTY OBJECT_DEPENDS "${VAPE421_PRODUCT_JAR}")
 
-function(add_vape_native_target target product_jar output_name)
-    get_filename_component(product_jar_abs "${product_jar}" ABSOLUTE)
-    file(TO_CMAKE_PATH "${product_jar_abs}" VAPE421_PRODUCT_JAR_RC_PATH)
-    configure_file(payload.rc.in "${CMAKE_CURRENT_BINARY_DIR}/generated/${target}.rc" @ONLY)
-    set_property(SOURCE "${CMAKE_CURRENT_BINARY_DIR}/generated/${target}.rc"
-            APPEND PROPERTY OBJECT_DEPENDS "${product_jar_abs}")
-
-    add_library(${target} SHARED
-            dllmain.c
-            loader_bootstrap.c
-            native_bridge.c
-            "${CMAKE_CURRENT_BINARY_DIR}/generated/${target}.rc")
-    target_include_directories(${target} PRIVATE
-            "${CMAKE_CURRENT_SOURCE_DIR}"
-            "${VAPE421_JNI_INCLUDE}"
-            "${VAPE421_JNI_MD_INCLUDE}"
-            "${VAPE421_JVMTI_INCLUDE}")
-    target_compile_definitions(${target} PRIVATE
-            WIN32_LEAN_AND_MEAN
-            _CRT_SECURE_NO_WARNINGS)
-    target_compile_options(${target} PRIVATE /W4)
-    target_link_libraries(${target} PRIVATE user32 ws2_32)
-    set_target_properties(${target} PROPERTIES OUTPUT_NAME "${output_name}")
-endfunction()
-
-add_vape_native_target(Vape421Native
-        "${VAPE421_PRODUCT_JAR}" Vape421Native)
+add_library(Vape421Native SHARED
+        dllmain.c
+        loader_bootstrap.c
+        native_bridge.c
+        "${CMAKE_CURRENT_BINARY_DIR}/generated/payload.rc")
+target_include_directories(Vape421Native PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}"
+        "${VAPE421_JNI_INCLUDE}"
+        "${VAPE421_JNI_MD_INCLUDE}"
+        "${VAPE421_JVMTI_INCLUDE}")
+target_compile_definitions(Vape421Native PRIVATE
+        WIN32_LEAN_AND_MEAN
+        _CRT_SECURE_NO_WARNINGS)
+target_compile_options(Vape421Native PRIVATE /W4)
+target_link_libraries(Vape421Native PRIVATE user32 ws2_32)
 
 # Standalone JVMTI collector for inspecting client updates. This target stays
 # separate from Vape421Native so it can be injected without loading the Java
@@ -86,7 +80,6 @@ target_compile_definitions(Vape421Injector PRIVATE
         WIN32_LEAN_AND_MEAN
         _CRT_SECURE_NO_WARNINGS)
 target_compile_options(Vape421Injector PRIVATE /W4)
-target_link_libraries(Vape421Injector PRIVATE ws2_32)
 
 include(CTest)
 if(BUILD_TESTING)

@@ -20,6 +20,10 @@ extends EventRenderTickBase {
 
     @Override
     public boolean fire() {
+        if (!EventRender2D.wasCreatedThisFrame()) {
+            EventRender2D.create();
+        }
+        EventRender2D.resetCreatedThisFrame();
         GuiScreenNativeCallbackBridge.drawScreen(null, 0, 0, 0.0f);
         if (GuiRenderPrimitives.d()) {
             RenderThreadTaskQueue.runPendingTasks();

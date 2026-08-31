@@ -178,7 +178,8 @@ extends ListValue<ItemLimitData, LimitValue> {
     public JsonObject toJson(boolean bl) {
         JsonObject jsonObject = this.toJson();
         JsonArray jsonArray = new JsonArray();
-        for (ItemLimitData itemLimitData : this.getValue()) {
+        for (ItemLimitData itemLimitData : new ArrayList<ItemLimitData>(this.getValue())) {
+            if (itemLimitData == null) continue;
             jsonArray.add(itemLimitData.toJson());
         }
         jsonObject.add("value", (JsonElement)jsonArray);
