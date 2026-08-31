@@ -82,18 +82,10 @@ public class ItemESPGroup {
                     break;
                 }
                 if (merged) continue;
-                ItemStack copyStack = ItemStack.S(itemStack.getItem());
-                copyStack.i(itemStack.l());
-                copyStack.s(itemStack.L());
-                copyStack.Y(itemStack.t());
-                this.stackedItems.add(copyStack);
+                this.stackedItems.add(itemStack.k());
                 continue;
             }
-            ItemStack singleStack = ItemStack.S(itemStack.getItem());
-            singleStack.i(itemStack.l());
-            singleStack.s(itemStack.L());
-            singleStack.Y(itemStack.t());
-            this.stackedItems.add(singleStack);
+            this.stackedItems.add(itemStack.k());
         }
     }
 
@@ -157,4 +149,3 @@ public class ItemESPGroup {
         this.rebuildStacks();
     }
 }
-
