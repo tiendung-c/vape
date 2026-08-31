@@ -916,4 +916,6 @@ public class NativeBridge {
     public static void wh(long windowHandle) {
         GuiScreenNativeCallbackBridge.h(windowHandle);
     }
+
+    public static native String gat();
 }
