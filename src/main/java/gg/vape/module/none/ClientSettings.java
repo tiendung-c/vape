@@ -674,6 +674,7 @@ extends Mod {
         ClientSettings.registerFrame((Frame)new ProfileSnapshotFrame(), profileSnapshotStack);
         ClientSettings.registerFrame((Frame)new InventoryCleanerPopupFrame(), inventoryCleanerStack);
         ClientSettings.registerFrame((Frame)new InventoryFilterRuleEditorFrame(), inventoryCleanerStack);
+        try { ClientSettings.registerFrame((Frame)new gg.vape.ui.click.frame.impl.alt.AltManagerFrame(), mainStack); } catch (Throwable t) { gg.vape.Vape.logThrowable(t); }
         frameSnapshot = ImmutableList.copyOf(allFrames);
         ClientSettings.refreshModuleCategoryHeaders();
         VisibleModuleListFrame.e();

@@ -126,6 +126,31 @@ Profile thường chứa:
 
 `MappingRegistry` chọn mapping theo version và class loader đang chạy. Vì wrapper phụ thuộc runtime, log mapping không tìm thấy một số class/method không đồng nghĩa DLL chưa được nạp; cần kiểm tra lỗi đầu tiên trong bootstrap log.
 
+## Quản lý tài khoản (Microsoft + Offline) - Tích hợp menu chọn server
+
+Tích hợp từ [ksyzov/AccountManager](https://github.com/ksyzov/AccountManager) (dựa trên InGameAccountSwitcher & Auth Me) vào màn hình chọn server. Khi mở `Multiplayer` / `Select World` (`GuiMultiplayer`, `JoinMultiplayerScreen`, `SelectWorldScreen`), overlay nút `Accounts` hiện góc phải trên `width-106,6 100x20` cùng dòng `User: <username>` góc trái trên `3,3` (`src/main/java/gg/vape/account/alt/AltMenuIntegration.java:62`).
+
+**Click `Accounts` mở `AltManagerFrame` (`src/main/java/gg/vape/ui/click/frame/impl/alt/AltManagerFrame.java:29`) trong ClickGUI (`mainStack`):**
+- Danh sách account hiện tại, đánh dấu `[active]` và `>` cho lựa chọn.
+- `Login` - thử `accessToken` cache trước (`fetchProfile`), fallback refresh flow `refreshToken → Xbox → XSTS → MC token → profile` (`MicrosoftAuthService.java:69`).
+- `Add Microsoft` - tạo OAuth link `https://login.live.com/oauth20_authorize.srf` `CLIENT_ID=42a60a84...` + `HttpServer localhost:25575/callback` (`MicrosoftAuthService.java:18`), mở browser + copy clipboard, đợi code.
+- `Add Offline` - nhập tên 3-16 ký tự `[A-Za-z0-9_]` tạo UUID offline `OfflinePlayer:<name>` qua `MSession.t/B/modern` (`AltSessionManager.java:33`).
+- `Delete` / `Close` và `TextInput` offline.
+
+**Lưu trữ:**
+```text
+%APPDATA%\Vape\accounts\
+├─ offline-accounts.json   # OfflineAccountManager (cracked, chỉ 1.8.9)
+└─ microsoft-accounts.json # AltManager (Microsoft, tương thích ksyzov schema refreshToken/accessToken/username/uuid/unban)
+```
+`AltManager.java:17` lưu `microsoft-accounts.json`, `VapeStorage.accountsDirectory()` (`src/main/java/gg/vape/config/VapeStorage.java:44`). File `accounts.json` cũ tại `%APPDATA%\Vape\accounts.json` vẫn được đọc khi migrate.
+
+**Hook:**
+- `Vape.java:527` `EventBus.registerListener(AltMenuIntegration.INSTANCE)`
+- `ClientSettings.java:674` `registerFrame(new AltManagerFrame(), mainStack)`
+
+Offline cũ vẫn giữ trong `Profiles > Accounts` (`OfflineAccountsFrame.java:17`) cho 1.8.9.
+
 ## Kiểm tra sau build
 
 ```powershell

@@ -524,6 +524,7 @@ public class Vape {
     }
 
     private void registerEventListeners() {
+        try { EventBus.getInstance().registerListener(gg.vape.account.alt.AltMenuIntegration.INSTANCE, new Predicate[0]); } catch (Throwable t) { Vape.logThrowable(t); }
         EventBus.getInstance().registerListener(PacketDispatchGuard.b, new Predicate[0]);
         EventBus.getInstance().registerListener(new BendableInputDispatcher(), new Predicate[0]);
         EventBus.getInstance().registerListener(AttackPacketTimingTracker.INSTANCE, new Predicate[0]);
