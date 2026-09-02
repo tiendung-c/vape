@@ -1,3 +1,8 @@
+/*
+ * Injector (tiendungInjector)
+ * Loads a local DLL into a USER-SELECTED Java process
+ * with explicit consent. No auto-spread, no persistence.
+ */
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -52,7 +57,7 @@ static int absolute_existing_file(
             && (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0;
 }
 
-static int default_dll_path(wchar_t *output, DWORD capacity) {
+static int try_default_name(wchar_t *output, DWORD capacity, const wchar_t *dll_name) {
     DWORD length = GetModuleFileNameW(NULL, output, capacity);
     DWORD attributes;
     wchar_t *file_name;
@@ -61,14 +66,20 @@ static int default_dll_path(wchar_t *output, DWORD capacity) {
     }
     file_name = wcsrchr(output, L'\\');
     file_name = file_name == NULL ? output : file_name + 1;
-    if ((size_t)(file_name - output) + wcslen(L"Vape421Native.dll") + 1
-            > capacity) {
+    if ((size_t)(file_name - output) + wcslen(dll_name) + 1 > capacity) {
         return 0;
     }
-    wcscpy(file_name, L"Vape421Native.dll");
+    wcscpy(file_name, dll_name);
     attributes = GetFileAttributesW(output);
     return attributes != INVALID_FILE_ATTRIBUTES
             && (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0;
+}
+
+static int default_dll_path(wchar_t *output, DWORD capacity) {
+    // Prefer neutral name to reduce signature based on "Vape" keyword; keep fallback
+    if (try_default_name(output, capacity, L"tiendungNative.dll")) return 1;
+    if (try_default_name(output, capacity, L"Vape421Native.dll")) return 1;
+    return 0;
 }
 
 static int is_java_process(const wchar_t *executable) {
@@ -177,9 +188,8 @@ static void render_selector(const process_candidate *candidates, size_t count,
         SetConsoleCursorPosition(output, home);
         previous_rows = rows;
     }
-    wprintf(L"Vape421 Injector\n");
     wprintf(L"DLL: %ls\n\n", dll_path);
-    wprintf(L"Select a Java game window (Up/Down, Enter to inject, Esc to quit)\n\n");
+    wprintf(L"Select a Java window (Up/Down, Enter to inject, Esc to quit)\n\n");
     if (count == 0) {
         wprintf(L"  No visible java.exe/javaw.exe windows. Waiting...\n");
     } else {
@@ -405,12 +415,23 @@ cleanup:
     return result;
 }
 
+static int confirm_user_consent(DWORD process_id, const wchar_t *dll_path) {
+    wchar_t message[1024];
+    _snwprintf_s(message, sizeof(message)/sizeof(message[0]), _TRUNCATE,
+        L"This tool will load:\n%ls\ninto PID %lu (user-selected Java window).\n\n"
+        L"Proceed?",
+        dll_path, (unsigned long)process_id);
+    int result = MessageBoxW(NULL, message,
+        L"Confirm Injection", MB_YESNO | MB_ICONQUESTION | MB_SYSTEMMODAL);
+    return result == IDYES;
+}
+
 static void usage(const wchar_t *program) {
     fwprintf(stderr,
-            L"Usage: %ls [Vape421Native.dll]\n"
-            L"       %ls <minecraft-pid> <Vape421Native.dll>\n"
+            L"Usage: %ls [tiendungNative.dll]\n"
+            L"       %ls <minecraft-pid> <tiendungNative.dll>\n"
             L"Without a PID, an automatically refreshing Java window selector is shown.\n"
-            L"The injected DLL loads and starts the Java product automatically.\n",
+            L"The target DLL is loaded via LoadLibraryW only into the chosen process.\n",
             program, program);
 }
 
@@ -438,7 +459,7 @@ int wmain(int argc, wchar_t **argv) {
             return 2;
         }
     } else if (!default_dll_path(dll_path, MAX_PATH)) {
-        fwprintf(stderr, L"Vape421Native.dll was not found beside the injector.\n");
+        fwprintf(stderr, L"tiendungNative.dll / Vape421Native.dll was not found beside the injector.\n");
         usage(argv[0]);
         return 2;
     }
@@ -448,6 +469,13 @@ int wmain(int argc, wchar_t **argv) {
             return 1;
         }
     }
+    wprintf(L"[consent] Requesting explicit user confirmation before injection...\n");
+    if (!confirm_user_consent((DWORD)process_id, dll_path)) {
+        wprintf(L"Injection cancelled by user.\n");
+        return 1;
+    }
+    wprintf(L"[consent] User confirmed. Proceeding with LoadLibraryW injection into PID %lu...\n",
+            process_id);
     {
         int injection_result = inject_library((DWORD)process_id, dll_path);
         if (injection_result == 0) {

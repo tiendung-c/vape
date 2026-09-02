@@ -166,11 +166,7 @@ extends Mod {
     public AimAssist() {
         super("AimAssist", -327674, Category.COMBAT, "Smoothly aims to closest valid target");
         this.adaptiveTargeting = new AimAssistTargetingSubModule(this, "Adaptive");
-        this.mode = ModeValue.create((Object)this, "Mode",
-                "Simple - Lightweight smooth aiming\nAdaptive - Advanced tracking with adaptive behavior\nLinear - Proportional linear aiming with GCD fix",
-                (ModeSelection)this.simpleRotation.getSelectionValue(),
-                this.simpleRotation.getSelectionValue(), this.adaptiveTargeting.getSelectionValue(),
-                this.linearMode.getSelectionValue());
+        this.mode = ModeValue.create((Object)this, "Mode", "Simple - Lightweight smooth aiming\nAdaptive - Advanced tracking with adaptive behavior\nLinear - Proportional linear aiming with GCD fix", (ModeSelection)this.simpleRotation.getSelectionValue(), this.simpleRotation.getSelectionValue(), this.adaptiveTargeting.getSelectionValue(), this.linearMode.getSelectionValue());
         this.targetFilter = EntityTargetFilterValue.createForModule(this);
         this.requireMouseDown = BooleanValue.create(this, "Require mouse down", true, "Only aim while mouse is down");
         this.aimVertically = BooleanValue.create(this, "Aim vertically", false, "Aims up and down as well");
@@ -199,16 +195,7 @@ extends Mod {
         this.breakBlocksWhitelist.setCompactListValue(this.blockBreakItems);
         this.breakBlocksWhitelist.addDependentValues(this.blockBreakItems);
         this.checkBlockBreak.addDependentValues(this.breakBlocksWhitelist);
-        this.addValue(this.mode, this.targetFilter, this.requireMouseDown, this.strafeIncrease, this.checkBlockBreak, this.breakBlocksWhitelist, this.blockBreakItems, this.limitToItems, this.allowedItems);
-        this.mode.addModeDependentValues(this.simpleRotation.getSelectionValue(), this.aimVertically,
-                this.verticalSpeed, this.horizontalSpeed, this.maxAngle, this.distance,
-                this.targetArea, this.targetMode);
-        this.mode.addModeDependentValues(this.adaptiveTargeting.getSelectionValue(), this.aimVertically,
-                this.verticalSpeed, this.horizontalSpeed, this.maxAngle, this.distance,
-                this.targetArea, this.targetMode);
-        this.mode.addModeDependentValues(this.linearMode.getSelectionValue(), this.aimVertically,
-                this.verticalSpeed, this.horizontalSpeed, this.maxAngle, this.distance,
-                this.targetArea, this.targetMode);
+        this.addValue(this.mode, this.targetFilter, this.requireMouseDown, this.strafeIncrease, this.checkBlockBreak, this.breakBlocksWhitelist, this.blockBreakItems, this.aimVertically, this.verticalSpeed, this.horizontalSpeed, this.maxAngle, this.distance, this.limitToItems, this.allowedItems, this.targetArea, this.targetMode);
         this.horizontalSpeed.setMaximumFractionDigits(0);
     }
 
@@ -274,3 +261,4 @@ extends Mod {
     }
 
 }
+

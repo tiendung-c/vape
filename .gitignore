@@ -9,3 +9,7 @@ tmp-*/
 *.iws
 javap-*.txt
 .idea/workspace.xml
+# private auto push tools - hide from public repo
+auto_up.ps1
+auto_up.bat
+up_full_force.bat

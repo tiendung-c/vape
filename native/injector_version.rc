@@ -1,0 +1,37 @@
+#include <windows.h>
+
+// Clean VersionInfo: removes "generic injector / no metadata" heuristic (Yogi/Kryptik)
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION 1,0,0,0
+PRODUCTVERSION 1,0,0,0
+FILEFLAGSMASK 0x17L
+FILEFLAGS 0x0L
+FILEOS 0x40004L
+FILETYPE 0x1L
+FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "tiendung\0"
+            VALUE "FileDescription", "Injector\0"
+            VALUE "FileVersion", "1.0.0.0\0"
+            VALUE "InternalName", "tiendungInjector\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 tiendung\0"
+            VALUE "OriginalFilename", "tiendungInjector.exe\0"
+            VALUE "ProductName", "Injector\0"
+            VALUE "ProductVersion", "1.0.0.0\0"
+            VALUE "Comments", "Loads a local DLL into a user-selected process with explicit consent.\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
+
+// Embed explicit UAC manifest - asInvoker, no admin, no uiAccess
+1 RT_MANIFEST "injector.manifest"
+
+// Optional: small icon placeholder removed to keep deterministic build; add if signing

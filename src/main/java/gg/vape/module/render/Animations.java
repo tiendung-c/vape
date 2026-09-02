@@ -68,7 +68,7 @@ extends Mod {
     }
 
     public Animations() {
-        super("BlockHit", (int)MODULE_COLOR, Category.COMBAT, "Automatically blockhit");
+        super("Animations", (int)MODULE_COLOR, Category.RENDER, "BlockHit animations");
         this.predictiveMode = new DamageResponsiveAnimationsMode(this, "Predict").getSelectionValue();
         this.automaticMode = new SwordUseMouseGuardAnimationsMode(this, "Auto").getSelectionValue();
         this.lagMode = new LegacyBlockingPacketBufferedAnimationsMode(this, "Lag").getSelectionValue();

@@ -62,17 +62,28 @@ extends SubModule<AimAssist> {
                 && gg.vape.config.ClientSettings.isAttackButtonDown() && this.target == null
                 || !aimAssist.getRequireMouseDown().getEffectiveValue().booleanValue()) {
             EntityLivingBase candidateTarget = aimAssist.findBestTarget();
+            // Fix self-aim from findBestTarget
+            if (candidateTarget != null && candidateTarget.equals(Minecraft.thePlayer())) {
+                candidateTarget = null;
+            }
             if (!aimAssist.getRequireMouseDown().getEffectiveValue().booleanValue()) {
                 ++this.retargetCounter;
                 if (this.retargetCounter > 700 || this.target == null || !aimAssist.isValidTarget(this.target)) {
+                    if (candidateTarget != null && !aimAssist.isValidTarget(candidateTarget)) candidateTarget = null;
                     this.target = candidateTarget;
                     this.retargetCounter = 0;
                 }
             } else {
+                if (candidateTarget != null && !aimAssist.isValidTarget(candidateTarget)) candidateTarget = null;
                 this.target = candidateTarget;
             }
         }
         if (this.target == null) {
+            return;
+        }
+        // Fix self-aim: never aim at self
+        if (this.target.equals(Minecraft.thePlayer())) {
+            this.target = null;
             return;
         }
         if (Minecraft.currentScreen().isNotNull() || !gg.vape.module.none.ClientSettings.INSTANCE.inputEnabled) {
@@ -83,6 +94,9 @@ extends SubModule<AimAssist> {
 
     private void applyLinearRotation(AimAssist aimAssist) {
         EntityPlayerSP player = Minecraft.thePlayer();
+        if (player.isNull() || this.target == null || this.target.isNull()) return;
+        // Fix self-aim: abort if target is self or same entity as player
+        if (this.target.equals(player)) return;
         float partialTicks = Minecraft.getTimer().renderPartialTicks();
 
         Vec3d closestPoint = RotationUtil.T(player, this.target.R$src$Lgg_vape_wrapper_impl_AxisAlignedBB_$r19dfl(), 0.0, 0.0, 0.0);
